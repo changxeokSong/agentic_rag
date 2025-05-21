@@ -17,21 +17,24 @@ class VectorSearchTool(BaseTool):
         self.vector_store = vector_store
     
     def execute(self, query, collection="user_uploads"):
-        """벡터 검색 실행"""
+        """벡터 검색 실행 (langchain retriever 사용, 코사인 유사도 top 5)"""
         logger.info(f"벡터 검색 실행: {query}, 컬렉션: {collection}")
         try:
-            results = self.vector_store.search(query, collection)
-            
+            # retriever 객체 생성 (top_k=5)
+            faiss_store = self.vector_store.get_store(collection)
+            retriever = faiss_store.as_retriever(search_kwargs={"k": 5})
+            results = retriever.get_relevant_documents(query)
+
             if not results:
                 return "검색 결과가 없습니다."
-            
+
             # 결과 포맷팅
             formatted_results = []
             for i, doc in enumerate(results):
                 formatted_results.append(f"결과 {i+1}:")
                 formatted_results.append(doc.page_content)
                 formatted_results.append("")
-            
+
             return "\n".join(formatted_results)
         except Exception as e:
             logger.error(f"벡터 검색 오류: {str(e)}")

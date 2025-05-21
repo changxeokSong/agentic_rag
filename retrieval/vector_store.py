@@ -86,3 +86,13 @@ class VectorStore:
         except Exception as e:
             logger.error(f"검색 오류: {str(e)}")
             return []
+
+    def get_store(self, collection_name):
+        """FAISS 인스턴스를 반환합니다."""
+        if collection_name not in self.stores:
+            store_path = os.path.join(VECTOR_DB_PATH, collection_name)
+            if os.path.exists(store_path):
+                self.stores[collection_name] = FAISS.load_local(store_path, self.embeddings)
+            else:
+                raise ValueError("벡터 저장소가 존재하지 않습니다.")
+        return self.stores[collection_name]
