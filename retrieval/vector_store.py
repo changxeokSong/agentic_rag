@@ -1,8 +1,8 @@
 # retrieval/vector_store.py
 
 import os
-from langchain.embeddings.huggingface import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from config import (
     LM_STUDIO_BASE_URL, 

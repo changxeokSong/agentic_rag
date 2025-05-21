@@ -11,7 +11,6 @@ from retrieval.vector_store import VectorStore
 from core.orchestrator import Orchestrator
 from utils.logger import setup_logger
 from config import print_config, DEBUG_MODE, ENABLED_TOOLS
-from retrieval.document_loader import DocumentLoader
 
 # 비동기 지원을 위한 nest_asyncio 설정
 nest_asyncio.apply()

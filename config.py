@@ -5,11 +5,11 @@ import json
 from dotenv import load_dotenv
 from langchain_teddynote import logging
 
-# 프로젝트 이름을 입력합니다.
-logging.langsmith("AgenticRAG")
-
 # .env 파일 로드
 load_dotenv()
+
+# 프로젝트 이름을 입력합니다.
+logging.langsmith("AgenticRAG")
 
 # LM Studio 설정
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")

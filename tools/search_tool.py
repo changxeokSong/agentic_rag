@@ -1,7 +1,7 @@
 # tools/search_tool.py
 
 import os
-from langchain.tools import DuckDuckGoSearchRun
+from langchain_community.tools import DuckDuckGoSearchRun
 from tools.base_tool import BaseTool
 from config import SEARCH_ENGINE_API_KEY
 from utils.logger import setup_logger
