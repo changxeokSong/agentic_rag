@@ -1,0 +1,15 @@
+streamlit
+langchain
+langchain-openai
+langchain-community
+python-dotenv
+tavily-python
+openai
+aiohttp
+pydantic
+langchain-teddynote
+pytz
+sentence-transformers
+chromadb
+pdf2image
+pytesseract
