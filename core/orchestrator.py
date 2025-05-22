@@ -11,11 +11,11 @@ logger = setup_logger(__name__)
 class Orchestrator:
     """전체 AgenticRAG 시스템 오케스트레이션"""
     
-    def __init__(self, lm_studio_client, vector_store=None):
+    def __init__(self, lm_studio_client):
         """오케스트레이터 초기화"""
         self.lm_studio_client = lm_studio_client
         self.query_analyzer = QueryAnalyzer(lm_studio_client)
-        self.tool_manager = ToolManager(vector_store)
+        self.tool_manager = ToolManager()
         self.response_generator = ResponseGenerator(lm_studio_client)
         logger.info("오케스트레이터 초기화 완료")
     

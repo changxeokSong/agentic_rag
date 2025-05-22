@@ -2,9 +2,12 @@
 
 import os
 from tools.search_tool import WebSearchTool
-from tools.vector_tool import VectorSearchTool
 from tools.calculator_tool import CalculatorTool
 from tools.weather_tool import WeatherTool
+# MongoDB 도구 임포트
+from tools.mongodb_tools import ListMongoDBFilesTool, GetMongoDBFileContentTool
+# internal_vector_search 도구 클래스 임포트
+from tools.internal_vector_search import InternalVectorSearchTool # 클래스 임포트
 from config import ENABLED_TOOLS
 from utils.logger import setup_logger
 
@@ -35,10 +38,6 @@ class ToolManager:
         if "search_tool" in ENABLED_TOOLS:
             self.tools["search_tool"] = WebSearchTool()
         
-        # 벡터 검색 도구 (벡터 저장소가 제공된 경우)
-        if "vector_tool" in ENABLED_TOOLS and vector_store:
-            self.tools["vector_tool"] = VectorSearchTool(vector_store)
-        
         # 계산 도구
         if "calculator_tool" in ENABLED_TOOLS:
             self.tools["calculator_tool"] = CalculatorTool()
@@ -46,7 +45,18 @@ class ToolManager:
         # 날씨 도구
         if "weather_tool" in ENABLED_TOOLS:
             self.tools["weather_tool"] = WeatherTool()
-        
+
+        # MongoDB 도구 등록
+        if "list_mongodb_files_tool" in ENABLED_TOOLS:
+            self.tools["list_mongodb_files_tool"] = ListMongoDBFilesTool()
+        if "get_mongodb_file_content_tool" in ENABLED_TOOLS:
+             self.tools["get_mongodb_file_content_tool"] = GetMongoDBFileContentTool()
+
+        # internal_vector_search 도구 등록
+        if "internal_vector_search" in ENABLED_TOOLS:
+             # InternalVectorSearchTool은 벡터 스토어가 필요 없습니다 (내부적으로 MongoDBStorage 사용)
+            self.tools["internal_vector_search"] = InternalVectorSearchTool()
+
         logger.info(f"등록된 도구: {', '.join(self.tools.keys())}")
     
     def execute_tool(self, tool_name, **kwargs):

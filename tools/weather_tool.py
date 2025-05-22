@@ -125,30 +125,3 @@ class WeatherTool(BaseTool):
             f"- 일출: {sunrise}, 일몰: {sunset}"
         ]
         return '\n'.join(lines)
-    
-    def _get_mock_weather(self, location):
-        """테스트용 모의 날씨 데이터"""
-        logger.info(f"모의 날씨 데이터 사용: {location}")
-        # 실제 API 대신 테스트용 데이터 반환
-        import random
-        
-        # 도시별로 약간 다른 날씨 제공
-        city_hash = sum([ord(c) for c in location]) % 100
-        
-        # 도시 해시에 따라 다른 날씨 생성
-        if city_hash < 25:
-            condition = "맑음"
-        elif city_hash < 50:
-            condition = "흐림"
-        elif city_hash < 75:
-            condition = "비"
-        else:
-            condition = "구름 조금"
-            
-        return {
-            "temp_c": round(15 + (city_hash / 10), 1),  # 15°C ~ 25°C
-            "temp_f": round(59 + (city_hash / 5), 1),   # 59°F ~ 79°F
-            "condition": condition,
-            "humidity": 40 + city_hash % 30,            # 40% ~ 70%
-            "wind_kph": 5 + city_hash % 20              # 5 ~ 25 km/h
-        }

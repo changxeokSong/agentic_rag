@@ -24,11 +24,15 @@ RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.7"))
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
-TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "3"))
+TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "5"))
 
 # 외부 API 키
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 SEARCH_ENGINE_API_KEY = os.getenv("SEARCH_ENGINE_API_KEY", "")
+
+# 임베딩 모델 설정 추가
+OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-ada-002")
 
 # 로깅 설정
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -38,8 +42,11 @@ DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() == "true"
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 TIMEOUT = int(os.getenv("TIMEOUT", "30"))
 
+DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
+
 # 활성화된 도구 확인
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,vector_tool,calculator_tool,weather_tool").split(",")
+# MongoDB 도구 추가
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_mongodb_files_tool,get_mongodb_file_content_tool,internal_vector_search").split(",")
 
 # 도구 정의 - 활성화된 도구만 포함
 def get_available_functions():
@@ -60,19 +67,28 @@ def get_available_functions():
             }
         },
         {
-            "name": "vector_tool",
-            "description": "내부 문서 저장소(사내 위키, 정책, 기술 문서 등)에서 정보를 검색합니다. 회사 내부 자료, 정책, 기술 가이드, 업무 매뉴얼 등 조직 내에서만 접근 가능한 정보가 필요할 때 사용하세요.\n예시: '사내 연차 정책 알려줘', '내부 기술 문서에서 RAG 관련 자료 찾아줘', '비즈니스 문서에서 보고서 양식 검색해줘'",
+            "name": "internal_vector_search",
+            "description": "업로드된 내부 문서(예: PDF, 텍스트 파일 등)에서 벡터 검색을 통해 정보를 검색합니다. 특정 파일 내용, 사내 문서, 업로드한 보고서 등 내부 자료 검색이 필요할 때 사용하세요. 필요한 경우 특정 파일 이름이나 태그로 검색을 필터링할 수 있습니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "검색할 쿼리"
+                        "description": "내부 문서에서 검색할 쿼리"
                     },
-                    "collection": {
+                    "file_filter": {
                         "type": "string",
-                        "description": "검색할 컬렉션(tech, business, general)",
-                        "enum": ["tech", "business", "general"]
+                        "description": "검색 결과를 필터링할 특정 파일 이름 (선택 사항)"
+                    },
+                    "tags_filter": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "검색 결과를 필터링할 태그 목록 (선택 사항)"
+                    },
+                     "top_k": {
+                        "type": "integer",
+                        "description": f"반환할 검색 결과의 최대 개수 (기본값: {TOP_K_RESULTS})",
+                         "default": TOP_K_RESULTS
                     }
                 },
                 "required": ["query"]
@@ -104,6 +120,30 @@ def get_available_functions():
                     }
                 },
                 "required": ["location"]
+            }
+        },
+        # MongoDB 도구 정의 추가
+        {
+            "name": "list_mongodb_files_tool",
+            "description": "MongoDB GridFS에 저장된 파일 목록을 조회합니다. 사용자가 업로드한 파일의 이름이나 목록 정보가 필요할 때 사용하세요.",
+            "parameters": {
+                "type": "object",
+                "properties": {}, # 매개변수 없음
+                "required": []
+            }
+        },
+        {
+            "name": "get_mongodb_file_content_tool",
+            "description": "MongoDB GridFS에 저장된 특정 파일의 내용을 가져옵니다. 사용자가 업로드한 파일의 내용을 확인하거나 응답에 활용해야 할 때 사용하세요. 파일 이름을 입력받습니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "내용을 가져올 파일의 이름"
+                    }
+                },
+                "required": ["filename"]
             }
         }
     ]
@@ -141,7 +181,7 @@ def generate_function_selection_prompt():
 - 사용자: '최신 AI 논문 찾아줘'
   → search_tool
 - 사용자: '내부 문서 저장소에서 AI 관련 자료 검색해줘'
-  → vector_tool
+  → internal_vector_search
 - 사용자: '123 곱하기 456은 얼마야?'
   → calculator_tool
 - 사용자: '서울의 오늘 날씨 알려줘'
@@ -155,7 +195,7 @@ FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
 # 응답 생성 프롬프트
 RESPONSE_GENERATION_PROMPT = """
-당신은 도구의 실행 결과와 원래 사용자 질문을 바탕으로 최종 답변을 생성해야 합니다.
+당신은 도구의 실행 결과와 원래 사용자 질문을 바탕으로 빠지는 내용없이 최종 답변을 생성해야 합니다.
 모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.
 도구 실행 결과를 분석하고, 사용자 질문에 가장 적합한 답변을 작성하세요.
 답변은 명확하고 구체적이어야 하며, 도구 실행 결과에서 얻은 정보를 잘 통합해야 합니다.
@@ -180,8 +220,8 @@ def print_config():
             "Tool Selection": TOOL_SELECTION_TEMPERATURE,
             "Response": RESPONSE_TEMPERATURE
         },
-        "Vector DB": {
-            "Path": VECTOR_DB_PATH,
+        "RAG": {
+            "Vector DB Path (Not used for MongoDB)": VECTOR_DB_PATH, # MongoDB 사용 시에는 이 경로를 사용하지 않음을 명시
             "Chunk Size": CHUNK_SIZE,
             "Chunk Overlap": CHUNK_OVERLAP,
             "Top K Results": TOP_K_RESULTS
@@ -192,7 +232,18 @@ def print_config():
             "Max Retries": MAX_RETRIES,
             "Timeout": TIMEOUT
         },
-        "Enabled Tools": ENABLED_TOOLS
+        "Enabled Tools": ENABLED_TOOLS,
+        # MongoDB 관련 정보 추가
+        "MongoDB": {
+             "Database Name": DATABASE_NAME,
+             "Vector Collection Name": VECTOR_COLLECTION_NAME # config 파일에 추가
+        },
+        "Embedding": { # 임베딩 설정 정보 추가
+            "Model Name": EMBEDDING_MODEL_NAME
+        }
     }
     
     return config_info
+
+# MongoDB 벡터 컬렉션 이름을 config에 추가
+VECTOR_COLLECTION_NAME = "document_chunks" # storage/mongodb_storage.py와 동일하게 설정
