@@ -7,9 +7,10 @@ from tools.search_tool import search_tool
 from tools.calculator_tool import calculator_tool
 from tools.weather_tool import weather_tool
 # MongoDB 관련 도구 임포트
-from tools.mongodb_tools import list_mongodb_files_tool, get_mongodb_file_content_tool
+from tools.mongodb_tools import list_files_tool
 # internal_vector_search 도구 임포트
-from tools.internal_vector_search import internal_vector_search
+from tools.vector_search_tool import vector_search_tool
+from config import RESPONSE_GENERATION_PROMPT
 
 logger = setup_logger(__name__)
 
@@ -29,9 +30,8 @@ class Agent:
             "search_tool": search_tool,
             "calculator_tool": calculator_tool,
             "weather_tool": weather_tool,
-            "list_mongodb_files_tool": list_mongodb_files_tool,
-            "get_mongodb_file_content_tool": get_mongodb_file_content_tool,
-            "internal_vector_search": internal_vector_search, # internal_vector_search 도구 매핑 추가
+            "list_files_tool": list_files_tool,
+            "vector_search_tool": vector_search_tool, # internal_vector_search 도구 매핑 추가
         }
         logger.info("에이전트 초기화 및 도구 매핑 완료")
 

@@ -169,6 +169,12 @@ class MongoDBStorage:
                 file_extension = os.path.splitext(filename)[1].lower()
                 docs = []
                 
+                # .xlsx 파일인 경우 GridFS에만 저장하고 벡터 컬렉션에는 추가하지 않습니다.
+                if file_extension == '.xlsx':
+                    logger.info(f"XLSX 파일 '{filename}'은 GridFS에만 저장하고 벡터 컬렉션에는 추가하지 않습니다.")
+                    # return # 벡터 컬렉션 저장 로직을 건너뛰고 함수 종료
+                    return "xlsx_saved" # XLSX 파일 저장 완료를 알리는 문자열 반환
+
                 if file_extension == '.txt':
                     loader = TextLoader(temp_file_path)
                     docs = loader.load()
@@ -236,6 +242,8 @@ class MongoDBStorage:
                 self.vector_collection.insert_many(chunks_to_insert)
                 logger.info(f"{len(chunks_to_insert)}개의 청크 문서 벡터 컬렉션에 저장 완료.")
 
+            return True # 일반 파일 저장 및 벡터 컬렉션 추가 완료 시 True 반환
+
         except Exception as e:
             logger.error(f"파일 저장 및 처리 중 오류 발생: {e}")
             # 오류 발생 시 GridFS에 저장된 파일 삭제
@@ -245,7 +253,8 @@ class MongoDBStorage:
                      logger.warning(f"오류 발생으로 인해 GridFS 파일 삭제 완료. file_id: {file_id}")
                  except Exception as delete_e:
                      logger.error(f"오류 발생 후 GridFS 파일 삭제 중 오류 발생: {delete_e}")
-            raise # 오류를 상위 호출자로 전파 (app.py에서 이 오류를 받아 사용자에게 표시)
+            # raise # 오류를 상위 호출자로 전파 (app.py에서 이 오류를 받아 사용자에게 표시)
+            return False # 오류 발생 시 False 반환
             
     def list_files(self):
         """GridFS에 저장된 원본 파일 목록을 조회합니다. 파일 ID, 이름, 크기를 포함합니다."""
@@ -386,43 +395,7 @@ class MongoDBStorage:
         except Exception as e:
             logger.error(f"MongoDB 벡터 검색 중 오류 발생: {e}")
             raise
-
-    # 이 메소드는 디버깅 목적으로 임시로 추가합니다. 실제 운영 코드에는 필요하지 않을 수 있습니다。
-    def find_vector_chunks_by_original_id(self, original_file_id):
-        """특정 original_file_id를 가진 벡터 청크 문서를 조회합니다."""
-        try:
-            from bson.objectid import ObjectId # ObjectId 임포트
-            # 문자열 ID를 ObjectId로 변환
-            object_id = ObjectId(original_file_id)
-
-            # 벡터 컬렉션에서 해당 original_file_id를 가진 문서 찾기
-            # 제한된 개수만 가져와서 확인 (너무 많으면 부담)
-            chunks = list(self.vector_collection.find(
-                {"metadata.original_file_id": object_id}
-            ).limit(5)) # 최대 5개 문서만 가져옴
-
-            logger.info(f"original_file_id '{original_file_id}'에 대한 벡터 청크 조회 결과: {len(chunks)}개 문서 발견.")
-            return chunks # 찾은 문서 목록 반환
-
-        except Exception as e:
-            logger.error(f"original_file_id '{original_file_id}'에 대한 벡터 청크 조회 오류: {e}")
-            return None # 오류 발생 시 None 반환
-
-    # 이 메소드도 디버깅 목적으로 임시로 추가합니다.
-    def get_gridfs_file_id_by_filename(self, filename: str):
-        """GridFS에 저장된 파일의 _id를 파일 이름으로 조회합니다."""
-        try:
-            file = self.fs.find_one({"filename": filename})
-            if file:
-                logger.info(f"파일 '{filename}'에 대한 GridFS _id 조회 성공: {file._id}")
-                return str(file._id) # ObjectId를 문자열로 반환
-            else:
-                logger.warning(f"파일 '{filename}' GridFS에서 찾을 수 없음. _id 조회 실패.")
-                return None
-        except Exception as e:
-            logger.error(f"파일 '{filename}'에 대한 GridFS _id 조회 오류: {e}")
-            return None
-
+        
     def is_file_exist(self, filename: str) -> bool:
         """GridFS에 특정 이름의 파일이 존재하는지 확인합니다."""
         try:

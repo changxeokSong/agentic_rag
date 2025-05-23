@@ -18,13 +18,13 @@ LM_STUDIO_MODEL_NAME = os.getenv("LM_STUDIO_MODEL_NAME", "qwen2.5-7b-instruct")
 
 # 온도(temperature) 설정
 TOOL_SELECTION_TEMPERATURE = float(os.getenv("TOOL_SELECTION_TEMPERATURE", "0.0"))
-RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.7"))
+RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.3"))
 
 # RAG 설정
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
-TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "5"))
+TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "10"))
 
 # 외부 API 키
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
@@ -46,7 +46,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
 # 활성화된 도구 확인
 # MongoDB 도구 추가
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_mongodb_files_tool,get_mongodb_file_content_tool,internal_vector_search").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool").split(",")
 
 # 도구 정의 - 활성화된 도구만 포함
 def get_available_functions():
@@ -67,7 +67,7 @@ def get_available_functions():
             }
         },
         {
-            "name": "internal_vector_search",
+            "name": "vector_search_tool",
             "description": "업로드된 내부 문서(예: PDF, 텍스트 파일 등)에서 벡터 검색을 통해 정보를 검색합니다. 특정 파일 내용, 사내 문서, 업로드한 보고서 등 내부 자료 검색이 필요할 때 사용하세요. 필요한 경우 특정 파일 이름이나 태그로 검색을 필터링할 수 있습니다.",
             "parameters": {
                 "type": "object",
@@ -124,26 +124,12 @@ def get_available_functions():
         },
         # MongoDB 도구 정의 추가
         {
-            "name": "list_mongodb_files_tool",
-            "description": "MongoDB GridFS에 저장된 파일 목록을 조회합니다. 사용자가 업로드한 파일의 이름이나 목록 정보가 필요할 때 사용하세요.",
+            "name": "list_files_tool",
+            "description": "데이터베이스에 저장된 파일 목록을 조회합니다. 사용자가 업로드한 파일의 이름이나 목록 정보가 필요할 때 사용하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {}, # 매개변수 없음
                 "required": []
-            }
-        },
-        {
-            "name": "get_mongodb_file_content_tool",
-            "description": "MongoDB GridFS에 저장된 특정 파일의 내용을 가져옵니다. 사용자가 업로드한 파일의 내용을 확인하거나 응답에 활용해야 할 때 사용하세요. 파일 이름을 입력받습니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "내용을 가져올 파일의 이름"
-                    }
-                },
-                "required": ["filename"]
             }
         }
     ]
@@ -191,11 +177,9 @@ def generate_function_selection_prompt():
 - 사용자: '서울의 오늘 날씨 알려줘'
   → {"name": "weather_tool", "arguments": {"location": "서울"}}
 - 사용자: '두크펌프 매뉴얼 파일에서 적산전력량에 의한 방식에 대해서 알려줘'
-  → {"name": "internal_vector_search", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
+  → {"name": "vector_search_tool", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
 - 사용자: '업로드된 파일 목록 보여줘'
-  → {"name": "list_mongodb_files_tool", "arguments": {}}
-- 사용자: '보고서.pdf 파일 내용 전부 보여줘'
-  → {"name": "get_mongodb_file_content_tool", "arguments": {"filename": "보고서.pdf"}}
+  → {"name": "list_files_tool", "arguments": {}}
 
 """ # 예시 끝에 개행 그대로 유지
 

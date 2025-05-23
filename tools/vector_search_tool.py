@@ -12,12 +12,12 @@ logger = setup_logger(__name__)
 # def internal_vector_search(query: str, file_filter: str = None, tags_filter: list[str] = None):
 #     ...
 
-class InternalVectorSearchTool(BaseTool):
+class VectorSearchTool(BaseTool):
     """MongoDB Atlas Vector Search를 사용하여 문서를 검색하는 도구"""
 
     def __init__(self):
         super().__init__(
-            name="internal_vector_search",
+            name="vector_search_tool",
             description=(
                 "사용자의 질문과 관련된 내부 문서 저장소의 내용을 검색합니다. "
                 "주로 업로드된 문서에 대한 질문이나 내용 요약/응답에 사용하세요. "
@@ -46,7 +46,7 @@ class InternalVectorSearchTool(BaseTool):
 
     def execute(self, query: str, file_filter: str = None, tags_filter: list[str] = None):
         """내부 문서 저장소에서 벡터 검색을 수행하고 결과를 반환합니다."""
-        logger.info(f"InternalVectorSearchTool 실행: 쿼리='{query}', 파일 필터='{file_filter}', 태그 필터='{tags_filter}'")
+        logger.info(f"VectorSearchTool 실행: 쿼리='{query}', 파일 필터='{file_filter}', 태그 필터='{tags_filter}'")
         try:
             # MongoDBStorage 싱글톤 인스턴스 사용
             mongo_storage = MongoDBStorage.get_instance()
