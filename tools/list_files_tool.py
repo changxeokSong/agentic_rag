@@ -28,8 +28,8 @@ class ListFilesTool(BaseTool):
             formatted_list = ["저장된 파일 목록:"]
             for file_info in file_list:
                 filename = file_info.get("filename", "알 수 없는 파일")
-                file_size_kb = round(file_info.get("length", 0) / 1024, 2)
-                formatted_list.append(f"- 파일 이름: {filename}, 크기: {file_size_kb} KB")
+                file_size_mb = round(file_info.get("length", 0) / (1024*1024), 2)
+                formatted_list.append(f"- 파일 이름: {filename}, 크기: {file_size_mb} MB")
 
             return "\\n".join(formatted_list)
         except Exception as e:
