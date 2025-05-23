@@ -228,43 +228,52 @@ def main():
             if 'processed_files' not in st.session_state:
                 st.session_state.processed_files = []
 
+            # 업로드 버튼 추가 - 파일이 선택된 경우에만 보이도록 합니다.
             if uploaded_file_mongo is not None:
-                filename = uploaded_file_mongo.name
-
-                # 이미 처리된 파일인지 확인
-                # 파일 이름과 크기로 간단하게 확인 (더 견고한 방법 필요시 _id 등으로 확인)
-                uploaded_file_info = (filename, uploaded_file_mongo.size)
-
-                if uploaded_file_info in st.session_state.processed_files:
-                    st.info(f"'{filename}' 파일은 이미 업로드되었습니다.")
-                else:
-                    # 파일 데이터를 읽어서 MongoDB에 저장
-                    file_data = uploaded_file_mongo.getvalue()
-                    # content_type = uploaded_file_mongo.type # GridFS에 저장 시 필요할 수 있음
+                if st.button("업로드", key="upload_button"):
+                    filename = uploaded_file_mongo.name
 
                     # MongoDBStorage 싱글톤 인스턴스 가져오기
                     from storage.mongodb_storage import MongoDBStorage
                     mongo_storage = MongoDBStorage.get_instance()
 
-                    with st.spinner(f"{filename} 업로드 중..."):
-                        try:
-                            # save_file 메소드 호출 (metadata는 필요에 따라 추가)
-                            # save_file 메소드는 GridFS 저장 후 벡터 컬렉션 저장까지 처리
-                            # save_file 메소드가 file_id를 반환하도록 수정했다면 여기서 사용 가능
-                            mongo_storage.save_file(file_data, filename, metadata={"tags": ["업로드"]}) # 예시 메타데이터
+                    # 0. GridFS에 이미 파일이 존재하는지 먼저 확인
+                    if mongo_storage.is_file_exist(filename):
+                        st.info(f"'{filename}' 파일은 이미 업로드되었습니다.")
+                        # 파일 목록 캐시 초기화 (새로고침 없으므로 목록 수동 갱신 필요)
+                        st.session_state.mongo_files = None # 목록 캐시 초기화는 유지
+                        # st.rerun() # 새로고침 제거
+                    else:
+                        # 파일 데이터를 읽어서 MongoDB에 저장
+                        file_data = uploaded_file_mongo.getvalue()
+                        # content_type = uploaded_file_mongo.type # GridFS에 저장 시 필요할 수 있음
 
-                            st.success(f"{filename} 업로드 성공!")
-                            # 성공적으로 처리된 파일 정보를 세션 상태에 추가
-                            st.session_state.processed_files.append(uploaded_file_info)
-                            # 파일 목록을 새로고침하기 위해 세션 상태의 mongo_files를 None으로 설정
-                            st.session_state.mongo_files = None
-                            # 파일 업로더 위젯 초기화
-                            st.session_state["file_uploader_key"] = None
-                            st.rerun() # 위젯 상태를 반영하기 위해 앱 다시 실행
+                        # MongoDBStorage 싱글톤 인스턴스 가져오기
+                        from storage.mongodb_storage import MongoDBStorage
+                        mongo_storage = MongoDBStorage.get_instance()
 
-                        except Exception as e:
-                            logger.error(f"업로드 중 오류 발생: {e}")
-                            st.error(f"업로드 중 오류가 발생했습니다: {e}")
+                        with st.spinner(f"{filename} 업로드 중..."):
+                            try:
+                                # save_file 메소드 호출 (metadata는 필요에 따라 추가)
+                                # save_file 메소드는 GridFS 저장 후 벡터 컬렉션 저장까지 처리
+                                # save_file 메소드가 file_id를 반환하도록 수정했다면 여기서 사용 가능
+                                mongo_storage.save_file(file_data, filename, metadata={"tags": ["업로드"]}) # 예시 메타데이터
+
+                                st.success(f"{filename} 업로드 성공!")
+                                # 성공적으로 처리된 파일 정보를 세션 상태에 추가
+                                st.session_state.processed_files.append((filename, uploaded_file_mongo.size))
+                                # 파일 목록을 새로고침하기 위해 세션 상태의 mongo_files를 None으로 설정
+                                st.session_state.mongo_files = None
+                                # 파일 업로더 위젯 초기화
+                                # st.session_state["file_uploader_key"] = None # 이 줄을 제거합니다.
+                                st.rerun() # 위젯 상태를 반영하기 위해 앱 다시 실행
+
+                            except Exception as e:
+                                logger.error(f"업로드 중 오류 발생: {e}")
+                                st.error(f"업로드 중 오류가 발생했습니다: {str(e)}")
+                                # 오류 발생 시 파일 목록 세션 상태를 초기화하여 다시 로드하도록 강제
+                                st.session_state.mongo_files = None
+                                st.rerun() # 변경사항 반영을 위해 다시 실행
         else:
             # 시스템이 초기화되지 않은 경우 메시지 표시
             st.info("시스템을 초기화 해주세요")

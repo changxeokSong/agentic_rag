@@ -141,9 +141,20 @@ class MongoDBStorage:
         if not self.embedding_model:
              logger.error("Embedding 모델이 로드되지 않았습니다. 파일 내용을 저장할 수 없습니다.")
              raise RuntimeError("Embedding model not loaded")
-             
+
+        # 0. 동일한 파일 이름이 이미 GridFS에 존재하는지 확인
+        if self.fs.find_one({'filename': filename}):
+            logger.warning(f"동일한 파일 이름 '{filename}'이(가) GridFS에 이미 존재합니다. 업로드를 건너뜁니다.")
+            # 여기에서 중복 업로드를 방지하고 함수를 종료합니다.
+            # app.py에서 이 경우를 구분하여 사용자에게 알릴 필요가 있다면,
+            # 특정 반환 값(예: False)을 주거나 커스텀 예외를 발생시킬 수 있습니다.
+            # 현재는 로그만 남기고 함수를 정상 종료(None 반환)하도록 합니다.
+            return
+
+        file_id = None # GridFS에 저장된 파일 ID를 추적하기 위한 변수 초기화
+
         try:
-            # 1. 원본 파일 GridFS에 저장
+            # 1. 원본 파일 GridFS에 저장 (이전에 동일 이름 체크를 했으므로 여기서는 중복이 없을 것으로 예상)
             file_id = self.fs.put(file_content, filename=filename, metadata=metadata)
             logger.info(f"원본 파일 '{filename}' GridFS에 저장 완료. file_id: {file_id}")
 
@@ -170,6 +181,10 @@ class MongoDBStorage:
                 else:
                     logger.warning(f"지원되지 않는 파일 형식: {filename}")
                     # 지원되지 않는 형식은 처리하지 않고 넘어갑니다.
+                    # GridFS에 저장된 파일 삭제
+                    if file_id:
+                         self.fs.delete(file_id)
+                         logger.info(f"지원되지 않는 형식 ({filename})으로 인해 GridFS 파일 삭제 완료. file_id: {file_id}")
                     return # 파일은 GridFS에 저장되었지만 벡터 컬렉션에는 추가되지 않음
 
             finally:
@@ -179,6 +194,10 @@ class MongoDBStorage:
 
             if not docs:
                  logger.warning(f"파일 내용 로드 실패 또는 내용 없음: {filename}")
+                 # 내용 로드 실패 시 GridFS에 저장된 파일 삭제
+                 if file_id:
+                      self.fs.delete(file_id)
+                      logger.info(f"내용 로드 실패 ({filename})로 인해 GridFS 파일 삭제 완료. file_id: {file_id}")
                  return # 문서 로드 실패 시 처리 중단
 
             # 3. 로드된 문서를 청크로 분할
@@ -219,9 +238,14 @@ class MongoDBStorage:
 
         except Exception as e:
             logger.error(f"파일 저장 및 처리 중 오류 발생: {e}")
-            # 오류 발생 시 GridFS에 저장된 파일 삭제 고려 (필요에 따라 구현)
-            # self.delete_file(filename) # 또는 file_id로 삭제
-            raise # 오류를 상위 호출자로 전파
+            # 오류 발생 시 GridFS에 저장된 파일 삭제
+            if file_id: # file_id가 생성되었는지 확인 (GridFS 저장 성공했는지 확인)
+                 try:
+                     self.fs.delete(file_id)
+                     logger.warning(f"오류 발생으로 인해 GridFS 파일 삭제 완료. file_id: {file_id}")
+                 except Exception as delete_e:
+                     logger.error(f"오류 발생 후 GridFS 파일 삭제 중 오류 발생: {delete_e}")
+            raise # 오류를 상위 호출자로 전파 (app.py에서 이 오류를 받아 사용자에게 표시)
             
     def list_files(self):
         """GridFS에 저장된 원본 파일 목록을 조회합니다. 파일 ID, 이름, 크기를 포함합니다."""
@@ -319,8 +343,8 @@ class MongoDBStorage:
 
             # 필터 조건 설정
             filter_conditions = {}
-            if file_filter:
-                filter_conditions['metadata.filename'] = file_filter
+            # if file_filter: # 파일 필터링 기능을 비활성화하기 위해 이 부분을 주석 처리합니다.
+            #     filter_conditions['metadata.filename'] = file_filter
             if tags_filter:
                 filter_conditions['metadata.tags'] = { '$in': tags_filter }
 
@@ -333,7 +357,7 @@ class MongoDBStorage:
                         'limit': top_k,
                         'index': 'vector_index', # MongoDB Atlas에서 생성한 벡터 인덱스 이름
                         # 필터 조건 추가
-                        'filter': filter_conditions
+                        'filter': filter_conditions # filter_conditions가 비어있으면 필터링되지 않음
                     }
                 },
                  { '$addFields': { 'score': { '$meta': 'vectorSearchScore' } } }, # 유사도 점수 추가
@@ -348,7 +372,7 @@ class MongoDBStorage:
             search_results = list(self.vector_collection.aggregate(pipeline))
             
             # 검색 결과에 score를 포함시키려면 $addFields 스테이지를 추가해야 합니다.
-            # 예: { '$addFields': { 'score': { '$meta': 'vectorSearchScore' } } }
+            # 예: { '$addFields': { '$score': { '$meta': 'vectorSearchScore' } } }
             # $vectorSearch 스테이지 바로 뒤 또는 $match 스테이지 뒤에 추가할 수 있습니다.
             # 현재는 score를 반환한다고 가정하고 internal_vector_search.py에서 사용하고 있습니다.
             # 실제 구현 시 필요에 따라 추가하십시오.
@@ -363,84 +387,49 @@ class MongoDBStorage:
             logger.error(f"MongoDB 벡터 검색 중 오류 발생: {e}")
             raise
 
-# 예시 사용 (실제 애플리케이션에서는 직접 호출하지 않음)
-# if __name__ == "__main__":
-#     # 환경변수 설정 필요: export MONGO_URI="your_mongodb_connection_string" AND export OPENAI_API_KEY="your_openai_api_key"
-#     # Atlas Cluster에 vector_index 라는 이름의 벡터 인덱스가 생성되어 있어야 함
-#     try:
-#         mongo_storage = MongoDBStorage.get_instance() # 싱글톤 인스턴스 사용
-#         # 파일 저장 예시 (테스트 파일 필요)
-#         # try:
-#         #     # 테스트 파일 생성 (예: test.txt, test.pdf, test.docx)
-#         #     with open("test.txt", "w", encoding='utf-8') as f:
-#         #         f.write("이것은 테스트 텍스트 문서입니다. RAG 테스트를 위해 작성되었습니다.")
-#         #     # pdf 또는 docx 파일은 직접 생성하거나 예제 파일 사용
-#         #
-#         #     # 파일 저장 테스트
-#         #     with open("test.txt", "rb") as f:
-#         #          content = f.read()
-#         #          mongo_storage.save_file(content, "test.txt", metadata={"tags": ["테스트", "텍스트"]})
-#         #
-#         #     # with open("test.pdf", "rb") as f:
-#         #     #      content = f.read()
-#         #     #      mongo_storage.save_file(content, "test.pdf", metadata={"tags": ["테스트", "PDF"]})
-#         #
-#         #     # with open("test.docx", "rb") as f:
-#         #     #      content = f.read()
-#         #     #      mongo_storage.save_file(content, "test.docx", metadata={"tags": ["테스트", "DOCX"]})
-#         #
-#         # except FileNotFoundError:
-#         #     print("테스트 파일을 찾을 수 없습니다. 테스트 파일을 생성하거나 경로를 확인해주세요.")
-#         # except Exception as e:
-#         #      print(f"파일 저장 테스트 중 오류 발생: {e}")
-#
-#         # 파일 목록 조회 예시
-#         # print("\nGridFS 파일 목록:")
-#         # try:
-#         #     for file_info in mongo_storage.list_files():
-#         #         print(f"- {file_info['filename']} (ID: {file_info['_id']})")
-#         # except Exception as e:
-#         #     print(f"파일 목록 조회 중 오류 발생: {e}")
-#
-#         # 파일 내용 조회 예시
-#         # print("\n'test.txt' 파일 내용:")
-#         # try:
-#         #     file_data = mongo_storage.get_file_content("test.txt")
-#         #     if file_data:
-#         #         print(file_data.decode('utf-8'))
-#         # except Exception as e:
-#         #      print(f"파일 내용 조회 중 오류 발생: {e}")
-#
-#         # 벡터 검색 예시
-#         print("\n벡터 검색 결과:")
-#         # 검색 쿼리를 실제 데이터에 맞게 수정 필요
-#         try:
-#             results = mongo_storage.vector_search("문서 내용에 대한 질문", tags_filter=["테스트"], top_k=3)
-#             if results:
-#                  for doc in results:
-#                     # 검색 결과 형태에 따라 접근 방식이 다를 수 있습니다.
-#                     # 예: print(f"- 내용: {doc.get('content', 'N/A')[:100]}... (파일: {doc.get('metadata', {}).get('filename', 'N/A')}, 청크: {doc.get('metadata', {}).get('chunk_index', 'N/A')})")
-#                     # internal_vector_search 도구에서 가공하므로 여기서는 원본 결과 형태를 확인합니다.
-#                      print(f"- 문서: {doc}") # 임시 전체 출력
-#             else:
-#                  print("검색 결과가 없습니다.")
-#         except Exception as e:
-#             print(f"벡터 검색 중 오류 발생: {e}")
-#
-#         # 파일 삭제 예시 (주의: 실제 삭제)
-#         # try:
-#         #      mongo_storage.delete_file("test.txt")
-#         #      # mongo_storage.delete_file("test.pdf")
-#         #      # mongo_storage.delete_file("test.docx")
-#         # except Exception as e:
-#         #      print(f"파일 삭제 중 오류 발생: {e}")
-#
-#     except ValueError as e:
-#         print(f"환경 변수 오류: {e}")
-#     except Exception as e:
-#         print(f"오류 발생: {e}")
-#     finally:
-#         # 스크립트 종료 시 연결 닫기
-#         # if 'mongo_storage' in locals() and mongo_storage:
-#         #     mongo_storage.close() # 싱글톤이므로 실제 애플리케이션 종료 시에만 닫아야 합니다.
-#          pass
+    # 이 메소드는 디버깅 목적으로 임시로 추가합니다. 실제 운영 코드에는 필요하지 않을 수 있습니다。
+    def find_vector_chunks_by_original_id(self, original_file_id):
+        """특정 original_file_id를 가진 벡터 청크 문서를 조회합니다."""
+        try:
+            from bson.objectid import ObjectId # ObjectId 임포트
+            # 문자열 ID를 ObjectId로 변환
+            object_id = ObjectId(original_file_id)
+
+            # 벡터 컬렉션에서 해당 original_file_id를 가진 문서 찾기
+            # 제한된 개수만 가져와서 확인 (너무 많으면 부담)
+            chunks = list(self.vector_collection.find(
+                {"metadata.original_file_id": object_id}
+            ).limit(5)) # 최대 5개 문서만 가져옴
+
+            logger.info(f"original_file_id '{original_file_id}'에 대한 벡터 청크 조회 결과: {len(chunks)}개 문서 발견.")
+            return chunks # 찾은 문서 목록 반환
+
+        except Exception as e:
+            logger.error(f"original_file_id '{original_file_id}'에 대한 벡터 청크 조회 오류: {e}")
+            return None # 오류 발생 시 None 반환
+
+    # 이 메소드도 디버깅 목적으로 임시로 추가합니다.
+    def get_gridfs_file_id_by_filename(self, filename: str):
+        """GridFS에 저장된 파일의 _id를 파일 이름으로 조회합니다."""
+        try:
+            file = self.fs.find_one({"filename": filename})
+            if file:
+                logger.info(f"파일 '{filename}'에 대한 GridFS _id 조회 성공: {file._id}")
+                return str(file._id) # ObjectId를 문자열로 반환
+            else:
+                logger.warning(f"파일 '{filename}' GridFS에서 찾을 수 없음. _id 조회 실패.")
+                return None
+        except Exception as e:
+            logger.error(f"파일 '{filename}'에 대한 GridFS _id 조회 오류: {e}")
+            return None
+
+    def is_file_exist(self, filename: str) -> bool:
+        """GridFS에 특정 이름의 파일이 존재하는지 확인합니다."""
+        try:
+            # fs.find_one은 파일이 존재하면 해당 파일 객체를, 없으면 None을 반환합니다.
+            file = self.fs.find_one({"filename": filename})
+            logger.info(f"GridFS 파일 '{filename}' 존재 확인 결과: {file is not None}")
+            return file is not None
+        except Exception as e:
+            logger.error(f"GridFS 파일 존재 확인 오류 ('{filename}'): {e}")
+            return False # 오류 발생 시 파일이 없다고 간주

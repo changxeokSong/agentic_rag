@@ -50,11 +50,44 @@ class InternalVectorSearchTool(BaseTool):
         try:
             # MongoDBStorage 싱글톤 인스턴스 사용
             mongo_storage = MongoDBStorage.get_instance()
-            
-            # MongoDBStorage의 vector_search 메소드 호출
+
+            # 파일 필터 처리: 제공된 필터가 있을 경우 실제 파일 이름을 찾아 사용
+            actual_file_filter = file_filter
+            if file_filter:
+                logger.info(f"파일 필터 인자 제공됨: '{file_filter}'. 실제 파일 이름을 찾습니다.")
+                try:
+                    # GridFS에 저장된 파일 목록 조회
+                    available_files = mongo_storage.list_files()
+                    logger.info(f"GridFS에서 조회된 파일 목록: {[f['filename'] for f in available_files]}")
+
+                    # 제공된 file_filter 문자열을 포함하는 파일 이름 찾기 (대소문자 구분 없이)
+                    matching_files = [
+                        f['filename'] for f in available_files
+                        if file_filter.lower() in f['filename'].lower()
+                    ]
+
+                    if len(matching_files) == 1:
+                        actual_file_filter = matching_files[0]
+                        logger.info(f"매칭되는 파일 이름 하나 발견: '{actual_file_filter}'으로 필터링합니다.")
+                    elif len(matching_files) > 1:
+                        logger.warning(f"매칭되는 파일 이름이 여러 개 발견되었습니다 ({matching_files}). 제공된 필터 '{file_filter}'을 그대로 사용합니다.")
+                        # 이 경우 사용자가 더 명확한 파일 이름을 제공하도록 유도하거나,
+                        # 사용자에게 선택지를 주거나, 모든 매칭 파일에서 검색하는 등의 로직을 추가할 수 있지만,
+                        # 현재는 제공된 필터를 그대로 사용하여 검색 결과가 부정확할 수 있음을 알립니다.
+                        actual_file_filter = file_filter # 제공된 필터를 그대로 사용
+                    else:
+                        logger.warning(f"제공된 파일 필터 '{file_filter}'에 매칭되는 파일이 GridFS에 없습니다. 파일 필터 없이 검색합니다.")
+                        actual_file_filter = None # 매칭되는 파일이 없으면 필터링하지 않음
+
+                except Exception as file_filter_error:
+                    logger.error(f"파일 필터 처리 중 오류 발생: {file_filter_error}")
+                    actual_file_filter = file_filter # 오류 발생 시 제공된 필터를 그대로 사용 (또는 None)
+
+
+            # MongoDBStorage의 vector_search 메소드 호출 (실제 파일 필터 사용)
             search_results = mongo_storage.vector_search(
                 query=query,
-                file_filter=file_filter,
+                file_filter=actual_file_filter, # <- 처리된 파일 필터 사용
                 tags_filter=tags_filter,
                 top_k=TOP_K_RESULTS # config에서 가져온 TOP_K_RESULTS 사용
             )

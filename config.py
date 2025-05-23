@@ -74,7 +74,7 @@ def get_available_functions():
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "내부 문서에서 검색할 쿼리"
+                        "description": "검색 대상 파일 내용 중 찾을 핵심 내용 또는 질문"
                     },
                     "file_filter": {
                         "type": "string",
@@ -157,20 +157,24 @@ AVAILABLE_FUNCTIONS = get_available_functions()
 # 프롬프트 템플릿 동적 생성
 def generate_function_selection_prompt():
     """활성화된 도구에 따라 프롬프트 템플릿 생성"""
+    # 프롬프트 엔지니어링 가이드를 참고하여 시스템 역할 명시 및 도구 사용 지침 강화
     base_prompt = (
-        "당신은 사용자의 질문을 분석하고 어떤 도구를 사용해야 할지 결정해야 합니다.\n"
+        "당신은 사용자의 질문을 분석하고 필요한 도구를 사용하여 사용자의 요청을 이행하는 데 특화된 AI 어시스턴트입니다.\n"
+        "주어진 도구 목록과 각 도구의 설명 및 사용 예시를 주의 깊게 검토하여 사용자의 의도에 가장 적합한 도구를 정확한 인자와 함께 선택하세요.\n"
         "여러 도구가 필요하다면 반드시 아래와 같이 JSON 배열로 반환하세요.\n"
         "예시:\n"
-        "[\n"
-        "  {\"name\": \"weather_tool\", \"arguments\": {\"location\": \"순천\"}},\n"
-        "  {\"name\": \"calculator_tool\", \"arguments\": {\"expression\": \"2322+2242\"}}\n"
-        "]\n"
+        "[" + "\n" +
+        "  {\"name\": \"weather_tool\", \"arguments\": {\"location\": \"순천\"}},\n" +
+        "  {\"name\": \"calculator_tool\", \"arguments\": {\"expression\": \"2322+2242\"}}\n" +
+        "]\n" +
         "단일 도구만 필요하다면 단일 객체로 반환하세요.\n"
         "사용 가능한 도구:\n"
     )
     tools_desc = []
     for i, func in enumerate(AVAILABLE_FUNCTIONS, 1):
         tools_desc.append(f"{i}. {func['name']}: {func['description']}")
+
+    # 특정 파일 내 검색 예시 추가
     example_prompt = """
 예시)
 - 사용자: '현재 순천 날씨 알려주고 2322+2242 계산해줘'
@@ -179,15 +183,23 @@ def generate_function_selection_prompt():
       {"name": "calculator_tool", "arguments": {"expression": "2322+2242"}}
     ]
 - 사용자: '최신 AI 논문 찾아줘'
-  → search_tool
+  → {"name": "search_tool", "arguments": {"query": "최신 AI 논문"}}
 - 사용자: '내부 문서 저장소에서 AI 관련 자료 검색해줘'
-  → internal_vector_search
+  → {"name": "internal_vector_search", "arguments": {"query": "AI 관련 자료"}}
 - 사용자: '123 곱하기 456은 얼마야?'
-  → calculator_tool
+  → {"name": "calculator_tool", "arguments": {"expression": "123 * 456"}}
 - 사용자: '서울의 오늘 날씨 알려줘'
-  → weather_tool
-"""
-    prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "\n사용자 질문을 분석하고 필요한 도구를 호출하세요. 여러 도구가 필요하다면 모두 사용하세요."
+  → {"name": "weather_tool", "arguments": {"location": "서울"}}
+- 사용자: '두크펌프 매뉴얼 파일에서 적산전력량에 의한 방식에 대해서 알려줘'
+  → {"name": "internal_vector_search", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
+- 사용자: '업로드된 파일 목록 보여줘'
+  → {"name": "list_mongodb_files_tool", "arguments": {}}
+- 사용자: '보고서.pdf 파일 내용 전부 보여줘'
+  → {"name": "get_mongodb_file_content_tool", "arguments": {"filename": "보고서.pdf"}}
+
+""" # 예시 끝에 개행 그대로 유지
+
+    prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "사용자 질문을 분석하고 필요한 도구를 호출하세요. 여러 도구가 필요하다면 모두 사용하세요."
     return prompt
 
 # 도구 선택 프롬프트
@@ -195,17 +207,18 @@ FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
 # 응답 생성 프롬프트
 RESPONSE_GENERATION_PROMPT = """
-당신은 도구의 실행 결과와 원래 사용자 질문을 바탕으로 빠지는 내용없이 최종 답변을 생성해야 합니다.
-모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.
-도구 실행 결과를 분석하고, 사용자 질문에 가장 적합한 답변을 작성하세요.
-답변은 명확하고 구체적이어야 하며, 도구 실행 결과에서 얻은 정보를 잘 통합해야 합니다.
-
-원본 사용자 질문: {user_query}
-
-사용된 도구 및 결과:
-{tool_results}
-
-이 정보를 바탕으로 사용자의 질문에 대한 종합적인 답변을 작성하세요.
+당신은 제공된 도구의 실행 결과와 원본 사용자 질문을 바탕으로 **빠지는 내용없이** 최종 답변을 생성해야 하는 AI 어시스턴트입니다.\n"
+"모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.\n"
+"도구 실행 결과를 **주의 깊게 분석하고, 사용자 질문에 가장 적합하고 정확한** 답변을 작성하세요.\n"
+"답변은 **명확하고 구체적**이어야 하며, 도구 실행 결과에서 얻은 정보를 **잘 통합**해야 합니다.\n"
+"만약 도구 실행 결과만으로는 사용자의 질문에 완전히 답변하기 어렵거나 정보가 부족하다면, **모르는 내용은 추측하지 말고 정보가 제한적이거나 불충분함을 명확하게 밝히세요.**\n"
+"\n"
+"원본 사용자 질문: {user_query}\n"
+"\n"
+"사용된 도구 및 결과:\n"
+"{tool_results}\n"
+"\n"
+"이 정보를 바탕으로 사용자의 질문에 대한 종합적이고 정확한 답변을 작성하세요."
 """
 
 # 설정 정보 출력 (디버깅용)
