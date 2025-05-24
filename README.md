@@ -4,11 +4,11 @@ Synergy
 ---
 TOOL
 ---
-- 웹 검색 도구
+- 웹 검색 도구(Tavily API)
 - 계산 도구(기본 수학 연산, sqrt, sin, cos, tan, log, pi, e)
-- 날씨 도구
-- 파일 목록 조회 도구
-- 벡터 검색 도구
+- 날씨 도구(OpenWeatherAPI)
+- 파일 목록 조회 도구(DB 업로드된 파일)
+- 벡터 검색 도구(MongoDB Atlas Vector Search)
 - 엑셀 읽기 도구
 ---
 초기 화면
