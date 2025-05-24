@@ -17,8 +17,3 @@ TOOL
 초기화 후 화면
 ![image](https://github.com/user-attachments/assets/e55c78fa-4ade-4548-94d9-a4c4a08d3c89)
 ---
-도구
-![image](https://github.com/user-attachments/assets/b2db04a7-262d-45ee-8277-7bc4b827ee33)
----
-
-
