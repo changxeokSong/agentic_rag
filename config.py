@@ -18,7 +18,7 @@ LM_STUDIO_MODEL_NAME = os.getenv("LM_STUDIO_MODEL_NAME", "qwen2.5-7b-instruct")
 
 # 온도(temperature) 설정
 TOOL_SELECTION_TEMPERATURE = float(os.getenv("TOOL_SELECTION_TEMPERATURE", "0.0"))
-RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.3"))
+RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.5"))
 
 # RAG 설정
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
@@ -46,7 +46,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
 # 활성화된 도구 확인
 # MongoDB 도구 추가
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,excel_reader_tool").split(",")
 
 # 도구 정의 - 활성화된 도구만 포함
 def get_available_functions():
@@ -131,6 +131,24 @@ def get_available_functions():
                 "properties": {}, # 매개변수 없음
                 "required": []
             }
+        },
+        {
+            "name": "excel_reader_tool",
+            "description": "DB(GridFS)에 저장된 엑셀 파일을 filename(부분 일치 가능) 또는 file_id로 찾아 미리보기(상위 5개 행)를 반환합니다. filename은 일부만 입력해도 됩니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_id": {
+                        "type": "string",
+                        "description": "GridFS의 파일 ObjectId(문자열)"
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "엑셀 파일명(부분 일치 가능, file_id가 우선)"
+                    }
+                },
+                "required": []
+            }
         }
     ]
     
@@ -162,27 +180,27 @@ def generate_function_selection_prompt():
 
     # 특정 파일 내 검색 예시 추가
     example_prompt = """
-예시)
-- 사용자: '현재 순천 날씨 알려주고 2322+2242 계산해줘'
-  → [
-      {"name": "weather_tool", "arguments": {"location": "순천"}},
-      {"name": "calculator_tool", "arguments": {"expression": "2322+2242"}}
-    ]
-- 사용자: '최신 AI 논문 찾아줘'
-  → {"name": "search_tool", "arguments": {"query": "최신 AI 논문"}}
-- 사용자: '내부 문서 저장소에서 AI 관련 자료 검색해줘'
-  → {"name": "internal_vector_search", "arguments": {"query": "AI 관련 자료"}}
-- 사용자: '123 곱하기 456은 얼마야?'
-  → {"name": "calculator_tool", "arguments": {"expression": "123 * 456"}}
-- 사용자: '서울의 오늘 날씨 알려줘'
-  → {"name": "weather_tool", "arguments": {"location": "서울"}}
-- 사용자: '두크펌프 매뉴얼 파일에서 적산전력량에 의한 방식에 대해서 알려줘'
-  → {"name": "vector_search_tool", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
-- 사용자: '업로드된 파일 목록 보여줘'
-  → {"name": "list_files_tool", "arguments": {}}
-
-""" # 예시 끝에 개행 그대로 유지
-
+                        예시)
+                        - 사용자: '현재 순천 날씨 알려주고 2322+2242 계산해줘'
+                        → [
+                            {"name": "weather_tool", "arguments": {"location": "순천"}},
+                            {"name": "calculator_tool", "arguments": {"expression": "2322+2242"}}
+                            ]
+                        - 사용자: '최신 AI 논문 찾아줘'
+                        → {"name": "search_tool", "arguments": {"query": "최신 AI 논문"}}
+                        - 사용자: '내부 문서 저장소에서 AI 관련 자료 검색해줘'
+                        → {"name": "internal_vector_search", "arguments": {"query": "AI 관련 자료"}}
+                        - 사용자: '123 곱하기 456은 얼마야?'
+                        → {"name": "calculator_tool", "arguments": {"expression": "123 * 456"}}
+                        - 사용자: '서울의 오늘 날씨 알려줘'
+                        → {"name": "weather_tool", "arguments": {"location": "서울"}}
+                        - 사용자: '두크펌프 매뉴얼 파일에서 적산전력량에 의한 방식에 대해서 알려줘'
+                        → {"name": "vector_search_tool", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
+                        - 사용자: 'DB에서 배수지 수위 데이터 엑셀 파일 보여줘'
+                        → {"name": "excel_reader_tool", "arguments": {"filename": "배수지 수위 데이터"}}
+                        - 사용자: '업로드된 파일 목록 보여줘'
+                        → {"name": "list_files_tool", "arguments": {}}
+                    """ # 예시 끝에 개행 그대로 유지
     prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "사용자 질문을 분석하고 필요한 도구를 호출하세요. 여러 도구가 필요하다면 모두 사용하세요."
     return prompt
 
@@ -191,19 +209,19 @@ FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
 # 응답 생성 프롬프트
 RESPONSE_GENERATION_PROMPT = """
-당신은 제공된 도구의 실행 결과와 원본 사용자 질문을 바탕으로 **빠지는 내용없이** 최종 답변을 생성해야 하는 AI 어시스턴트입니다.\n"
-"모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.\n"
-"도구 실행 결과를 **주의 깊게 분석하고, 사용자 질문에 가장 적합하고 정확한** 답변을 작성하세요.\n"
-"답변은 **명확하고 구체적**이어야 하며, 도구 실행 결과에서 얻은 정보를 **잘 통합**해야 합니다.\n"
-"만약 도구 실행 결과만으로는 사용자의 질문에 완전히 답변하기 어렵거나 정보가 부족하다면, **모르는 내용은 추측하지 말고 정보가 제한적이거나 불충분함을 명확하게 밝히세요.**\n"
-"\n"
-"원본 사용자 질문: {user_query}\n"
-"\n"
-"사용된 도구 및 결과:\n"
-"{tool_results}\n"
-"\n"
-"이 정보를 바탕으로 사용자의 질문에 대한 종합적이고 정확한 답변을 작성하세요."
-"""
+                            당신은 제공된 도구의 실행 결과와 원본 사용자 질문을 바탕으로 **빠지는 내용없이** 최종 답변을 생성해야 하는 AI 어시스턴트입니다.\n"
+                            "모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.\n"
+                            "도구 실행 결과를 **주의 깊게 분석하고, 사용자 질문에 가장 적합하고 정확한** 답변을 작성하세요.\n"
+                            "답변은 **명확하고 구체적**이어야 하며, 도구 실행 결과에서 얻은 정보를 **잘 통합**해야 합니다.\n"
+                            "만약 도구 실행 결과만으로는 사용자의 질문에 완전히 답변하기 어렵거나 정보가 부족하다면, **모르는 내용은 추측하지 말고 정보가 제한적이거나 불충분함을 명확하게 밝히세요.**\n"
+                            "\n"
+                            "원본 사용자 질문: {user_query}\n"
+                            "\n"
+                            "사용된 도구 및 결과:\n"
+                            "{tool_results}\n"
+                            "\n"
+                            "이 정보를 바탕으로 사용자의 질문에 대한 종합적이고 정확한 답변을 작성하세요."
+                        """
 
 # 설정 정보 출력 (디버깅용)
 def print_config():

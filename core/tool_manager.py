@@ -10,6 +10,7 @@ from tools.list_files_tool import ListFilesTool
 from tools.vector_search_tool import VectorSearchTool
 from config import ENABLED_TOOLS
 from utils.logger import setup_logger
+from tools.excel_reader_tool import ExcelReaderTool
 
 logger = setup_logger(__name__)
 
@@ -55,6 +56,10 @@ class ToolManager:
              # InternalVectorSearchTool은 벡터 스토어가 필요 없습니다 (내부적으로 MongoDBStorage 사용)
             self.tools["vector_search_tool"] = VectorSearchTool()
 
+        # 엑셀 리더 도구 등록
+        if "excel_reader_tool" in ENABLED_TOOLS:
+            self.tools["excel_reader_tool"] = ExcelReaderTool()
+
         logger.info(f"등록된 도구: {', '.join(self.tools.keys())}")
     
     def execute_tool(self, tool_name, **kwargs):
@@ -72,6 +77,9 @@ class ToolManager:
             logger.error(f"알 수 없는 도구: {tool_name}")
             return f"오류: '{tool_name}'은(는) 존재하지 않거나 활성화되지 않은 도구입니다."
         
+        # kwargs가 None이면 빈 dict으로 대체
+        if kwargs is None:
+            kwargs = {}
         logger.info(f"도구 실행: {tool_name}, 인자: {kwargs}")
         tool = self.tools[tool_name]
         

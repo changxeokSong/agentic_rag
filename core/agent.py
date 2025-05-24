@@ -6,8 +6,9 @@ from config import MAX_RETRIES, TIMEOUT # 설정 값 임포트
 from tools.search_tool import search_tool
 from tools.calculator_tool import calculator_tool
 from tools.weather_tool import weather_tool
+from tools.excel_reader_tool import excel_reader_tool
 # MongoDB 관련 도구 임포트
-from tools.list_files_tools import list_files_tool
+from tools.list_files_tool import list_files_tool
 # internal_vector_search 도구 임포트
 from tools.vector_search_tool import vector_search_tool
 from config import RESPONSE_GENERATION_PROMPT
@@ -32,6 +33,7 @@ class Agent:
             "weather_tool": weather_tool,
             "list_files_tool": list_files_tool, # MongoDB 도구 매핑 추가
             "vector_search_tool": vector_search_tool, # internal_vector_search 도구 매핑 추가
+            "excel_reader_tool": excel_reader_tool, # DB 엑셀 미리보기 도구 매핑 추가
         }
         logger.info("에이전트 초기화 및 도구 매핑 완료")
 

@@ -23,3 +23,5 @@ fastapi
 python-multipart
 pymongo
 gridfs
+pandas
+openpyxl

@@ -14,7 +14,7 @@ class ListFilesTool(BaseTool):
             description="MongoDB GridFS에 저장된 파일 목록을 조회합니다. 사용자가 업로드한 파일의 이름이나 목록 정보가 필요할 때 사용하세요."
         )
 
-    def execute(self):
+    def execute(self, **kwargs):
         """파일 목록을 조회하고 결과를 반환합니다."""
         logger.info("MongoDB 파일 목록 조회 실행")
         try:
@@ -31,7 +31,7 @@ class ListFilesTool(BaseTool):
                 file_size_mb = round(file_info.get("length", 0) / (1024*1024), 2)
                 formatted_list.append(f"- 파일 이름: {filename}, 크기: {file_size_mb} MB")
 
-            return "\\n".join(formatted_list)
+            return "\n".join(formatted_list)
         except Exception as e:
             logger.error(f"MongoDB 파일 목록 조회 오류: {str(e)}")
             return f"파일 목록 조회 중 오류가 발생했습니다: {str(e)}" 
