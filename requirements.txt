@@ -25,3 +25,4 @@ pymongo
 gridfs
 pandas
 openpyxl
+keybert

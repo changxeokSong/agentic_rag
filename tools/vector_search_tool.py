@@ -93,23 +93,24 @@ class VectorSearchTool(BaseTool):
             )
 
             if not search_results:
-                return "검색 결과가 없습니다."
+                return []
 
-            # 검색 결과를 포맷팅하여 반환
-            formatted_results = ["문서 검색 결과:"]
-            for i, doc in enumerate(search_results):
-                 content = doc.get('content', '내용 없음')
-                 filename = doc.get('metadata', {}).get('filename', '파일 이름 알 수 없음')
-                 chunk_index = doc.get('metadata', {}).get('chunk_index', 'N/A')
-                 score = doc.get('score', 'N/A')
-                 # 내용이 길 경우 일부만 표시
-                 display_content = content[:200] + '...' if len(content) > 200 else content
-                 
-                 formatted_results.append(f"결과 {i+1} (파일: {filename}, 청크: {chunk_index}, 점수: {score:.4f}):")
-                 formatted_results.append(display_content)
-                 formatted_results.append("---") # 결과 항목 구분
-
-            return "\\n".join(formatted_results)
+            # 검색 결과를 JSON 리스트로 반환
+            result = []
+            for doc in search_results:
+                content = doc.get('content', '내용 없음')
+                filename = doc.get('metadata', {}).get('filename', '파일 이름 알 수 없음')
+                chunk_index = doc.get('metadata', {}).get('chunk_index', 'N/A')
+                score = doc.get('score', 'N/A')
+                # 내용이 길 경우 일부만 표시
+                display_content = content[:200] + '...' if len(content) > 200 else content
+                result.append({
+                    "filename": filename,
+                    "chunk_index": chunk_index,
+                    "score": score,
+                    "content": display_content
+                })
+            return result
 
         except Exception as e:
             logger.error(f"InternalVectorSearchTool 실행 중 오류 발생: {str(e)}")

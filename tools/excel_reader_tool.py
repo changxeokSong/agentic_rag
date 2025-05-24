@@ -43,7 +43,7 @@ class ExcelReaderTool(BaseTool):
                 tmp_path = tmp.name
             try:
                 df = pd.read_excel(tmp_path)
-                preview = df.head().to_string()
+                preview = df.head().to_json(orient='records', force_ascii=False)
                 logger.info(f"엑셀 미리보기 성공: {fname}, shape={df.shape}")
             except Exception as e:
                 logger.error(f"엑셀 파일 읽기 오류: {e}")

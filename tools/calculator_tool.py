@@ -23,16 +23,16 @@ class CalculatorTool(BaseTool):
         try:
             # 안전한 표현식 검증 (안전하지 않은 함수 호출 방지)
             if not self._is_safe_expression(expression):
-                return "안전하지 않은 표현식입니다. 기본 수학 연산, sqrt, sin, cos, tan, log, pi, e 등만 허용됩니다."
+                return {"error": "안전하지 않은 표현식입니다. 기본 수학 연산, sqrt, sin, cos, tan, log, pi, e 등만 허용됩니다."}
             
             # 계산 실행
             result = self._safe_eval(expression)
             if isinstance(result, float):
                 result = round(result, 6)
-            return f"계산 결과: {result}"
+            return {"expression": expression, "result": result}
         except Exception as e:
             logger.error(f"계산 오류: {str(e)}")
-            return f"계산 중 오류가 발생했습니다: {str(e)}"
+            return {"error": f"계산 중 오류가 발생했습니다: {str(e)}"}
     
     def _is_safe_expression(self, expression):
         """표현식이 안전한지 확인 (코드 실행 방지)"""

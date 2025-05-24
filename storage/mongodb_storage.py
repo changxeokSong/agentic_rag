@@ -14,6 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings # OpenAIEmbeddings 임포트
 # Document Loaders 임포트
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
+from keybert import KeyBERT
 
 logger = setup_logger(__name__)
 
@@ -219,16 +220,22 @@ class MongoDBStorage:
             chunk_texts = [chunk.page_content for chunk in chunks]
             embeddings = self.embedding_model.embed_documents(chunk_texts)
             logger.info(f"{len(embeddings)}개의 청크 임베딩 생성 완료.")
-            
+
+            # KeyBERT로 태그 추출기 준비 (최초 1회만 로드)
+            if not hasattr(self, '_keybert_model'):
+                self._keybert_model = KeyBERT()
+            kw_model = self._keybert_model
+
             # 4. 각 청크의 벡터 임베딩 및 메타데이터를 별도 컬렉션에 저장
             chunks_to_insert = []
             for i, chunk in enumerate(chunks):
+                # KeyBERT로 주요 키워드 추출 (상위 5개, 단어만)
+                keywords = [kw for kw, _ in kw_model.extract_keywords(chunk.page_content, top_n=5)]
                 chunk_metadata = {
                     "filename": filename,
                     "chunk_index": i, # 청크 순서
                     "original_file_id": file_id, # GridFS 파일 ID 참조
-                    "tags": metadata.get("tags", []) if metadata else [], # 원본 파일의 태그 상속
-                    # 기존 chunk.metadata에 source 정보 등이 있다면 병합
+                    "tags": keywords, # 자동 추출 태그
                     **chunk.metadata
                 }
                 chunk_document = {

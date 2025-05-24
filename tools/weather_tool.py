@@ -33,7 +33,7 @@ class WeatherTool(BaseTool):
             location (str): 날씨를 확인할 위치(도시 이름)
             
         Returns:
-            str: 형식화된 날씨 정보 (모든 주요 필드 포함)
+            dict: 형식화된 날씨 정보 (모든 주요 필드 포함)
         """
         logger.info(f"날씨 조회: {location}")
         
@@ -48,7 +48,7 @@ class WeatherTool(BaseTool):
             return weather_data
         except Exception as e:
             logger.error(f"날씨 조회 오류: {str(e)}")
-            return f"날씨 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
+            return {"error": f"날씨 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"}
     
     def _get_real_weather(self, location):
         """OpenWeather Current Weather Data API 사용 (무료, 모든 주요 필드 포함)"""
@@ -107,21 +107,32 @@ class WeatherTool(BaseTool):
         weather_main = weather.get('main', '')
         weather_desc = weather.get('description', '')
 
-        lines = [
-            f"위치: {location} (위도: {lat}, 경도: {lon}, 국가: {country})",
-            f"시간대: {timezone}, 데이터 시각(UTC): {dt}",
-            f"[현재 날씨]",
-            f"- 온도: {temp_c}°C / {temp_f}°F (최저: {temp_min}°C, 최고: {temp_max}°C)",
-            f"- 체감온도: {feels_like}°C",
-            f"- 기압: {pressure} hPa",
-            f"- 습도: {humidity}%",
-            f"- 구름: {cloudiness}%",
-            f"- 가시거리: {visibility} m",
-            f"- 바람: {wind_speed} m/s, 풍향: {wind_deg}°" + (f", 돌풍: {wind_gust} m/s" if wind_gust else ""),
-            f"- 강수량(1시간): {rain_1h} mm, (3시간): {rain_3h} mm",
-            f"- 적설량(1시간): {snow_1h} mm, (3시간): {snow_3h} mm",
-            f"- 상태: {weather_main} ({weather_desc})",
-            f"- 날씨 아이콘: {icon}",
-            f"- 일출: {sunrise}, 일몰: {sunset}"
-        ]
-        return '\n'.join(lines)
+        return {
+            "location": location,
+            "lat": lat,
+            "lon": lon,
+            "country": country,
+            "timezone": timezone,
+            "datetime_utc": dt,
+            "temperature_c": temp_c,
+            "temperature_f": temp_f,
+            "temperature_min": temp_min,
+            "temperature_max": temp_max,
+            "feels_like": feels_like,
+            "pressure": pressure,
+            "humidity": humidity,
+            "cloudiness": cloudiness,
+            "visibility": visibility,
+            "wind_speed": wind_speed,
+            "wind_deg": wind_deg,
+            "wind_gust": wind_gust,
+            "rain_1h": rain_1h,
+            "rain_3h": rain_3h,
+            "snow_1h": snow_1h,
+            "snow_3h": snow_3h,
+            "weather_main": weather_main,
+            "weather_desc": weather_desc,
+            "icon": icon,
+            "sunrise": sunrise,
+            "sunset": sunset
+        }

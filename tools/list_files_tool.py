@@ -22,16 +22,18 @@ class ListFilesTool(BaseTool):
             mongo_storage = MongoDBStorage.get_instance()
             file_list = mongo_storage.list_files()
             if not file_list:
-                return "저장된 파일이 없습니다."
+                return []
 
-            # 파일 목록 정보를 보기 좋게 포맷팅
-            formatted_list = ["저장된 파일 목록:"]
+            # 파일 목록을 JSON 리스트로 반환
+            result = []
             for file_info in file_list:
                 filename = file_info.get("filename", "알 수 없는 파일")
                 file_size_mb = round(file_info.get("length", 0) / (1024*1024), 2)
-                formatted_list.append(f"- 파일 이름: {filename}, 크기: {file_size_mb} MB")
-
-            return "\n".join(formatted_list)
+                result.append({
+                    "filename": filename,
+                    "size_mb": file_size_mb
+                })
+            return result
         except Exception as e:
             logger.error(f"MongoDB 파일 목록 조회 오류: {str(e)}")
-            return f"파일 목록 조회 중 오류가 발생했습니다: {str(e)}" 
+            return {"error": f"파일 목록 조회 중 오류가 발생했습니다: {str(e)}"} 
