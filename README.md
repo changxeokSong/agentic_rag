@@ -2,13 +2,15 @@
 
 ## 📌 프로젝트 개요
 
-AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 지능형 챗봇 시스템으로, 다양한 도구를 활용하여 사용자 요청을 자동으로 분석하고 처리합니다. 웹 검색, 계산, 날씨 조회, 펌프 제어, 문서 벡터 검색 등 여러 기능을 하나의 대화형 인터페이스에서 제공합니다.
+AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 지능형 챗봇 시스템으로, 다양한 도구를 활용하여 사용자 요청을 자동으로 분석하고 처리합니다. 웹 검색, 계산, 날씨 조회, 아두이노 수위센서 제어, LSTM 수위 예측, 펌프 제어, 문서 벡터 검색 등 여러 기능을 하나의 대화형 인터페이스에서 제공합니다.
 
 ## ⚡ 주요 기능
 
 - **🔍 웹 검색**: Tavily API를 통한 실시간 웹 정보 검색
 - **🧮 계산기**: 수학 연산, 단위 변환, 공식 계산
 - **🌤️ 날씨 조회**: 전 세계 도시의 실시간 날씨 정보
+- **💧 아두이노 수위센서**: USB 시리얼 통신을 통한 실시간 수위 센서 값 읽기
+- **📈 LSTM 수위 예측**: 딥러닝 모델을 활용한 수위 예측 시스템
 - **⚙️ 펌프 제어**: 가상 펌프 장치의 ON/OFF 제어 시뮬레이션
 - **🔎 벡터 검색**: 업로드된 문서에서 의미 기반 검색
 - **📂 파일 관리**: PostgreSQL 기반 파일 업로드, 저장, 다운로드
@@ -21,6 +23,8 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 지능형 챗봇 시�
 - **LM Studio**: 로컬 LLM 모델 서빙 (EXAONE-3.5-7.8B-Instruct)
 - **PostgreSQL**: 메인 데이터베이스 및 벡터 검색 (pgvector)
 - **LangChain**: LLM 체인 관리 및 문서 처리
+- **TensorFlow/Keras**: LSTM 수위 예측 모델 
+- **PySerial**: 아두이노 시리얼 통신
 - **FastAPI**: API 서버 (선택적)
 
 ### Frontend
@@ -58,7 +62,19 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 지능형 챗봇 시�
 - 파일 정보 및 메타데이터 제공
 - 예시: "업로드된 파일 목록 보여줘"
 
-### 6. 펌프 제어 도구 (pump_control_tool)
+### 6. 아두이노 수위센서 도구 (arduino_water_sensor_tool)
+- USB 시리얼 통신을 통한 아두이노 연동
+- 실시간 수위 센서 값 읽기 및 펌프 제어
+- WSL2 환경에서 usbipd-win 지원
+- 예시: "수위 센서 값 읽어줘", "펌프1 켜줘"
+
+### 7. LSTM 수위 예측 도구 (water_level_prediction_tool)  
+- TensorFlow/Keras 기반 LSTM 딥러닝 모델
+- 과거 수위 데이터를 기반으로 미래 수위 예측
+- 학습된 모델(.h5)을 활용한 실시간 예측
+- 예시: "수위 예측해줘", "다음 10분간 수위 변화 예측해줘"
+
+### 8. 펌프 제어 도구 (pump_control_tool)
 - 가상 펌프 장치 제어 시뮬레이션
 - 개별/전체 펌프 ON/OFF 제어
 - 예시: "펌프1 켜줘", "모든 펌프 상태 확인해줘"
@@ -66,7 +82,7 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 지능형 챗봇 시�
 ## 📁 프로젝트 구조
 
 ```
-agentic_rag/
+agentic_rag_good/
 ├── app.py                 # Streamlit 메인 애플리케이션
 ├── config.py             # 환경 설정 및 도구 정의
 ├── requirements.txt      # Python 패키지 의존성
@@ -78,13 +94,16 @@ agentic_rag/
 ├── models/               # LLM 클라이언트
 │   └── lm_studio.py     # LM Studio API 클라이언트
 ├── tools/                # 개별 도구 구현
-│   ├── base_tool.py     # 도구 기본 클래스
 │   ├── search_tool.py   # 웹 검색 도구
 │   ├── calculator_tool.py # 계산기 도구
 │   ├── weather_tool.py  # 날씨 조회 도구
 │   ├── vector_search_tool.py # 벡터 검색 도구
 │   ├── list_files_tool.py # 파일 목록 조회 도구
+│   ├── arduino_water_sensor_tool.py # 아두이노 수위센서 도구
+│   ├── water_level_prediction_tool.py # LSTM 수위 예측 도구
 │   └── pump_control_tool.py # 펌프 제어 도구
+├── lstm_model/           # LSTM 모델 파일
+│   └── lstm_water_level_model.h5 # 학습된 LSTM 수위 예측 모델
 ├── storage/              # 데이터 저장소
 │   └── postgresql_storage.py # PostgreSQL 연동
 ├── retrieval/            # 문서 처리
@@ -93,6 +112,9 @@ agentic_rag/
 │   ├── logger.py        # 로깅 설정
 │   └── helpers.py       # 헬퍼 함수
 └── img/                  # 스크린샷 및 이미지
+    ├── 도구_목록.png
+    ├── 시스템_초기_화면.png
+    └── 시스템_초기화_후.png
 ```
 
 ## 🚀 설치 및 실행
@@ -136,7 +158,7 @@ PG_DB_PASSWORD=synergy
 
 # 시스템 설정
 DEBUG_MODE=false
-ENABLED_TOOLS=search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,pump_control_tool
+ENABLED_TOOLS=search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,arduino_water_sensor_tool,water_level_prediction_tool,pump_control_tool
 ```
 
 ### 3. PostgreSQL 설정
@@ -157,7 +179,14 @@ CREATE EXTENSION IF NOT EXISTS vector;
 2. EXAONE-3.5-7.8B-Instruct 모델 다운로드
 3. 로컬 서버 시작 (기본 포트: 1234)
 
-### 5. 애플리케이션 실행
+### 5. 아두이노 설정 (선택사항)
+
+1. 아두이노에 수위센서 및 펌프 제어 코드 업로드
+2. USB 케이블로 아두이노와 컴퓨터 연결
+3. WSL2 사용 시 usbipd-win 설치 및 USB 포워딩 설정
+4. 시리얼 포트 권한 설정: `sudo usermod -a -G dialout $USER`
+
+### 6. 애플리케이션 실행
 
 ```bash
 streamlit run app.py
@@ -184,10 +213,16 @@ streamlit run app.py
 "펌프1 켜주고 부산 날씨 알려줘"
 "Python 검색하고 10*5 계산해줘"
 
-# 펌프 제어
+# 아두이노 수위센서 및 펌프 제어
+"수위 센서 값 읽어줘"
 "펌프1 켜줘"
+"펌프2 꺼줘"
 "모든 펌프 상태 확인해줘"
-"펌프3 꺼줘"
+
+# LSTM 수위 예측
+"수위 예측해줘"
+"다음 10분간 수위 변화 예측해줘"
+"수위 모델 상태 확인해줘"
 
 # 파일 검색 (업로드된 문서에서)
 "보고서에서 매출 정보 찾아줘"
@@ -248,7 +283,10 @@ Streamlit UI (결과 표시)
 
 ## 📈 향후 계획
 
-- [ ] 더 많은 도구 추가 (이메일, 달력 등)
+- [ ] 더 많은 IoT 센서 지원 (온도, 습도, pH 등)
+- [ ] 실시간 데이터 대시보드 구축
+- [ ] 더 정교한 수위 예측 모델 개발
+- [ ] 모바일 알림 시스템 연동
 - [ ] 대화 히스토리 관리
 - [ ] 사용자 인증 시스템
 - [ ] REST API 제공
