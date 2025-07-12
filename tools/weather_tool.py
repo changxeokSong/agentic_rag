@@ -2,13 +2,13 @@
 
 import os
 import requests
-from tools.base_tool import BaseTool
+from typing import Dict, Any
 from config import WEATHER_API_KEY
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-class WeatherTool(BaseTool):
+class WeatherTool:
     """날씨 정보 도구"""
     
     def __init__(self, api_key=None):
@@ -18,10 +18,8 @@ class WeatherTool(BaseTool):
         Args:
             api_key (str, optional): 날씨 API 키. 기본값은 환경변수에서 가져옵니다.
         """
-        super().__init__(
-            name="weather_tool",
-            description="특정 위치의 현재 날씨 정보를 가져옵니다."
-        )
+        self.name = "weather_tool"
+        self.description = "특정 위치의 현재 날씨 정보를 가져옵니다."
         self.api_key = api_key or WEATHER_API_KEY
         logger.info("날씨 도구 초기화")
     
@@ -135,4 +133,31 @@ class WeatherTool(BaseTool):
             "icon": icon,
             "sunrise": sunrise,
             "sunset": sunset
+        }
+    
+    def _get_mock_weather(self, location):
+        """모의 날씨 데이터 반환 (API 키가 없을 때)"""
+        import random
+        
+        # 모의 데이터 생성
+        temp_c = round(random.uniform(-10, 35), 1)
+        temp_f = round(temp_c * 9/5 + 32, 1)
+        
+        return {
+            "location": location,
+            "temperature_c": temp_c,
+            "temperature_f": temp_f,
+            "feels_like": round(temp_c + random.uniform(-3, 3), 1),
+            "humidity": random.randint(30, 90),
+            "pressure": random.randint(1000, 1030),
+            "weather_desc": random.choice(["맑음", "구름 조금", "흐림", "비", "눈"]),
+            "wind_speed": round(random.uniform(0, 15), 1),
+            "message": "모의 데이터입니다. 정확한 날씨 정보를 위해 WEATHER_API_KEY를 설정하세요."
+        }
+    
+    def get_info(self) -> Dict[str, str]:
+        """도구 정보 반환"""
+        return {
+            "name": self.name,
+            "description": self.description
         }

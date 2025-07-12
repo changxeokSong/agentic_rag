@@ -1,12 +1,12 @@
 import os
+from typing import Dict, Any
 from langchain_community.tools.tavily_search import TavilySearchResults
-from tools.base_tool import BaseTool
 from config import TAVILY_API_KEY
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-class WebSearchTool(BaseTool):
+class WebSearchTool:
     """웹 검색 도구"""
     
     def __init__(self, api_key=None, max_results=3):
@@ -17,10 +17,8 @@ class WebSearchTool(BaseTool):
             api_key (str, optional): Tavily API 키. 기본값은 환경변수에서 가져옵니다.
             max_results (int, optional): 반환할 최대 검색 결과 수. 기본값 3.
         """
-        super().__init__(
-            name="search_web",
-            description="웹에서 정보를 검색합니다. 최신 정보, 뉴스, 일반적인 질문에 유용합니다."
-        )
+        self.name = "search_web"
+        self.description = "웹에서 정보를 검색합니다. 최신 정보, 뉴스, 일반적인 질문에 유용합니다."
         self.api_key = api_key or TAVILY_API_KEY
         self.max_results = max_results
         
@@ -55,3 +53,10 @@ class WebSearchTool(BaseTool):
         except Exception as e:
             logger.error(f"웹 검색 오류: {str(e)}")
             return {"error": f"검색 중 오류가 발생했습니다: {str(e)}"}
+    
+    def get_info(self) -> Dict[str, str]:
+        """도구 정보 반환"""
+        return {
+            "name": self.name,
+            "description": self.description
+        }

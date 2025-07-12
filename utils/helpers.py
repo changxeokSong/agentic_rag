@@ -13,6 +13,7 @@ def retry(max_retries=3, delay=1):
         @wraps(func)
         def wrapper(*args, **kwargs):
             retries = 0
+            current_delay = delay
             while retries < max_retries:
                 try:
                     return func(*args, **kwargs)
@@ -22,8 +23,8 @@ def retry(max_retries=3, delay=1):
                         logger.error(f"최대 재시도 횟수 도달: {func.__name__}, 에러: {str(e)}")
                         raise
                     logger.warning(f"함수 실행 실패: {func.__name__}, 재시도 {retries}/{max_retries}, 에러: {str(e)}")
-                    time.sleep(delay)
-                    delay *= 2  # 지수 백오프
+                    time.sleep(current_delay)
+                    current_delay *= 2  # 지수 백오프
         return wrapper
     return decorator
 

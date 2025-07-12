@@ -2,20 +2,18 @@
 
 import math
 import re
-from tools.base_tool import BaseTool
+from typing import Dict, Any
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-class CalculatorTool(BaseTool):
+class CalculatorTool:
     """계산 도구"""
     
     def __init__(self):
         """계산 도구 초기화"""
-        super().__init__(
-            name="calculator_tool",
-            description="수학 계산, 단위 변환, 공식 계산 등 수치 연산이 필요할 때 사용합니다."
-        )
+        self.name = "calculator_tool"
+        self.description = "수학 계산, 단위 변환, 공식 계산 등 수치 연산이 필요할 때 사용합니다."
     
     def execute(self, expression):
         """수학 표현식 계산"""
@@ -72,3 +70,10 @@ class CalculatorTool(BaseTool):
             'e': math.e
         }
         return eval(expression, {"__builtins__": {}}, safe_dict)
+    
+    def get_info(self) -> Dict[str, str]:
+        """도구 정보 반환"""
+        return {
+            "name": self.name,
+            "description": self.description
+        }

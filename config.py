@@ -14,11 +14,11 @@ logging.langsmith("AgenticRAG")
 # LM Studio 설정
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
 LM_STUDIO_API_KEY = os.getenv("LM_STUDIO_API_KEY", "lm-studio")
-LM_STUDIO_MODEL_NAME = os.getenv("LM_STUDIO_MODEL_NAME", "qwen2.5-7b-instruct")
+LM_STUDIO_MODEL_NAME = os.getenv("LM_STUDIO_MODEL_NAME", "exaone-3.5-7.8b-instruct")
 
 # 온도(temperature) 설정
 TOOL_SELECTION_TEMPERATURE = float(os.getenv("TOOL_SELECTION_TEMPERATURE", "0.0"))
-RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.5"))
+RESPONSE_TEMPERATURE = float(os.getenv("RESPONSE_TEMPERATURE", "0.7"))
 
 # RAG 설정
 VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./vector_db")
@@ -29,6 +29,8 @@ TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "10"))
 # 외부 API 키
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 SEARCH_ENGINE_API_KEY = os.getenv("SEARCH_ENGINE_API_KEY", "")
+
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 # 임베딩 모델 설정 추가
 OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
@@ -46,7 +48,14 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
 # 활성화된 도구 확인
 # MongoDB 도구 추가
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,excel_reader_tool").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
+
+# PostgreSQL configuration
+PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")
+PG_DB_PORT = os.getenv("PG_DB_PORT", "5432")
+PG_DB_NAME = os.getenv("PG_DB_NAME", "synergy") # 필수 설정
+PG_DB_USER = os.getenv("PG_DB_USER", "synergy") # 필수 설정
+PG_DB_PASSWORD = os.getenv("PG_DB_PASSWORD", "synergy") # 필수 설정
 
 # 도구 정의 - 활성화된 도구만 포함
 def get_available_functions():
@@ -133,21 +142,75 @@ def get_available_functions():
             }
         },
         {
-            "name": "excel_reader_tool",
-            "description": "DB(GridFS)에 저장된 엑셀 파일을 filename(부분 일치 가능) 또는 file_id로 찾아 미리보기(상위 5개 행)를 반환합니다. filename은 일부만 입력해도 됩니다.",
+            "name": "water_level_prediction_tool",
+            "description": "LSTM 모델을 사용하여 수위를 예측합니다. 과거 수위 데이터를 입력받아 미래 수위를 예측합니다.\n예시: '수위 예측해줘', '[10.5, 11.2, 12.1] 데이터로 수위 예측', '다음 5시간 수위 예측', '30분 후 수위 예측'",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_id": {
-                        "type": "string",
-                        "description": "GridFS의 파일 ObjectId(문자열)"
+                    "water_levels": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "과거 수위 데이터 리스트 (시계열 순서)"
                     },
-                    "filename": {
-                        "type": "string",
-                        "description": "엑셀 파일명(부분 일치 가능, file_id가 우선)"
+                    "dataPoints": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "과거 수위 데이터 리스트 (water_levels와 동일, 호환성용)"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "과거 수위 데이터 리스트 (water_levels와 동일, 호환성용)"
+                    },
+                    "prediction_steps": {
+                        "type": "integer",
+                        "description": "예측할 미래 시점 개수 (기본값: 1)",
+                        "minimum": 1,
+                        "maximum": 24,
+                        "default": 1
+                    },
+                    "prediction_hours": {
+                        "type": "integer",
+                        "description": "예측할 시간 수 (prediction_steps와 동일, 시간 기반 예측용)",
+                        "minimum": 1,
+                        "maximum": 24,
+                        "default": 1
+                    },
+                    "time_horizon": {
+                        "type": "object",
+                        "description": "시간 범위 설정 (예: {minutes: 30}, {hours: 2})",
+                        "properties": {
+                            "minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+                            "hours": {"type": "integer", "minimum": 1, "maximum": 24}
+                        }
                     }
                 },
                 "required": []
+            }
+        },
+        {
+            "name": "arduino_water_sensor",
+            "description": "아두이노 USB 시리얼 통신을 통해 수위 센서 값을 읽고 펌프를 제어하는 도구입니다.\n예시: '아두이노 수위 읽어줘', '아두이노 수위 레벨 확인해줘', '펌프1 켜줘', '펌프2 꺼줘', '아두이노 연결해줘'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["read_water_level", "read_current_level", "pump1_on", "pump1_off", "pump2_on", "pump2_off", "connect", "disconnect", "status", "test_communication", "pump_status", "read_pump_status"],
+                        "description": "실행할 액션 (read_water_level/read_current_level: 수위 읽기, pump1_on/off: 펌프1 제어, pump2_on/off: 펌프2 제어, connect: 연결, disconnect: 연결 해제, status: 상태 확인, test_communication: 통신 테스트, pump_status/read_pump_status: 펌프 상태 확인)"
+                    },
+                    "port": {
+                        "type": "string",
+                        "description": "아두이노 시리얼 포트 (예: COM3, /dev/ttyUSB0). 자동 감지를 위해 생략 가능"
+                    },
+                    "duration": {
+                        "type": "integer",
+                        "description": "펌프 작동 시간 (초). 펌프 제어 시 사용",
+                        "minimum": 1,
+                        "maximum": 300
+                    }
+                },
+                "required": ["action"]
             }
         }
     ]
@@ -161,47 +224,79 @@ AVAILABLE_FUNCTIONS = get_available_functions()
 # 프롬프트 템플릿 동적 생성
 def generate_function_selection_prompt():
     """활성화된 도구에 따라 프롬프트 템플릿 생성"""
-    # 프롬프트 엔지니어링 가이드를 참고하여 시스템 역할 명시 및 도구 사용 지침 강화
     base_prompt = (
-        "당신은 사용자의 질문을 분석하고 필요한 도구를 사용하여 사용자의 요청을 이행하는 데 특화된 AI 어시스턴트입니다.\n"
-        "주어진 도구 목록과 각 도구의 설명 및 사용 예시를 주의 깊게 검토하여 사용자의 의도에 가장 적합한 도구를 정확한 인자와 함께 선택하세요.\n"
-        "여러 도구가 필요하다면 반드시 아래와 같이 JSON 배열로 반환하세요.\n"
-        "예시:\n"
-        "[" + "\n" +
-        "  {\"name\": \"weather_tool\", \"arguments\": {\"location\": \"순천\"}},\n" +
-        "  {\"name\": \"calculator_tool\", \"arguments\": {\"expression\": \"2322+2242\"}}\n" +
-        "]\n" +
-        "단일 도구만 필요하다면 단일 객체로 반환하세요.\n"
-        "사용 가능한 도구:\n"
+        "사용자 요청을 분석하여 필요한 도구들을 JSON 배열로 반환하세요.\n\n"
+        "**중요:** 도구가 명확히 필요한 경우에만 선택하세요. 일반 대화나 인사말 등에는 도구를 사용하지 마세요.\n\n"
+        "**규칙:**\n"
+        "1. 명확하게 특정 기능이 필요한 경우에만 도구 선택\n"
+        "2. 여러 작업이 있으면 배열 [] 형태로 응답\n"
+        "3. 단일 작업이라도 배열 형태로 응답 (일관성 유지)\n"
+        "4. 도구가 필요하지 않으면 빈 배열 [] 반환\n"
+        "5. JSON 형태로만 응답, 다른 텍스트 금지\n"
+        "6. **펌프 번호를 정확히 구분하세요**: 펌프1 → pump1_on/pump1_off, 펌프2 → pump2_on/pump2_off\n\n"
+        "**응답 형식:**\n"
+        "- 도구 필요: [{\"name\": \"도구명\", \"arguments\": {\"인자\": \"값\"}}]\n"
+        "- 도구 불필요: []\n\n"
+        "**사용 가능한 도구:**\n"
     )
     tools_desc = []
     for i, func in enumerate(AVAILABLE_FUNCTIONS, 1):
         tools_desc.append(f"{i}. {func['name']}: {func['description']}")
 
-    # 특정 파일 내 검색 예시 추가
+    # 예시 추가
     example_prompt = """
-                        예시)
-                        - 사용자: '현재 순천 날씨 알려주고 2322+2242 계산해줘'
-                        → [
-                            {"name": "weather_tool", "arguments": {"location": "순천"}},
-                            {"name": "calculator_tool", "arguments": {"expression": "2322+2242"}}
-                            ]
-                        - 사용자: '최신 AI 논문 찾아줘'
-                        → {"name": "search_tool", "arguments": {"query": "최신 AI 논문"}}
-                        - 사용자: '내부 문서 저장소에서 AI 관련 자료 검색해줘'
-                        → {"name": "internal_vector_search", "arguments": {"query": "AI 관련 자료"}}
-                        - 사용자: '123 곱하기 456은 얼마야?'
-                        → {"name": "calculator_tool", "arguments": {"expression": "123 * 456"}}
-                        - 사용자: '서울의 오늘 날씨 알려줘'
-                        → {"name": "weather_tool", "arguments": {"location": "서울"}}
-                        - 사용자: '두크펌프 매뉴얼 파일에서 적산전력량에 의한 방식에 대해서 알려줘'
-                        → {"name": "vector_search_tool", "arguments": {"query": "적산전력량에 의한 방식", "file_filter": "23.두크펌프 매뉴얼.pdf"}}
-                        - 사용자: 'DB에서 배수지 수위 데이터 엑셀 파일 보여줘'
-                        → {"name": "excel_reader_tool", "arguments": {"filename": "배수지 수위 데이터"}}
-                        - 사용자: '업로드된 파일 목록 보여줘'
-                        → {"name": "list_files_tool", "arguments": {}}
-                    """ # 예시 끝에 개행 그대로 유지
-    prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "사용자 질문을 분석하고 필요한 도구를 호출하세요. 여러 도구가 필요하다면 모두 사용하세요."
+**예시:**
+
+1. "안녕하세요" 또는 "어떻게 지내세요?"
+   → []
+
+2. "고마워요" 또는 "잘했어"
+   → []
+
+3. "1+1 계산해줘"
+   → [{"name": "calculator_tool", "arguments": {"expression": "1+1"}}]
+
+4. "서울 날씨 알려줘"
+   → [{"name": "weather_tool", "arguments": {"location": "서울"}}]
+
+5. "서울 날씨와 2+2 계산해줘"  
+   → [{"name": "weather_tool", "arguments": {"location": "서울"}}, {"name": "calculator_tool", "arguments": {"expression": "2+2"}}]
+
+6. "최신 AI 뉴스 검색해줘"
+   → [{"name": "search_tool", "arguments": {"query": "최신 AI 뉴스"}}]
+
+7. "펌프1 켜줘" 또는 "아두이노 펌프1 켜줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_on"}}]
+
+8. "펌프1 꺼줘" 또는 "아두이노 펌프1 꺼줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_off"}}]
+
+9. "펌프2 켜줘" 또는 "아두이노 펌프2 켜줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]
+
+10. "펌프2 꺼줘" 또는 "아두이노 펌프2 꺼줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_off"}}]
+
+11. "[10.5, 11.2, 12.1] 데이터로 수위 예측해줘"
+   → [{"name": "water_level_prediction_tool", "arguments": {"water_levels": [10.5, 11.2, 12.1]}}]
+
+12. "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
+
+13. "COM4로 아두이노 연결해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "connect", "port": "COM4"}}]
+
+14. "현재 펌프 상태 알려줘" 또는 "아두이노 펌프 상태 확인해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]
+
+15. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
+
+16. "아두이노 통신 테스트해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "test_communication"}}]
+
+"""
+    prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "\n사용자 질문 분석하여 JSON 배열로 응답:"
     return prompt
 
 # 도구 선택 프롬프트
@@ -209,19 +304,30 @@ FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
 # 응답 생성 프롬프트
 RESPONSE_GENERATION_PROMPT = """
-                            당신은 제공된 도구의 실행 결과와 원본 사용자 질문을 바탕으로 **빠지는 내용없이** 최종 답변을 생성해야 하는 AI 어시스턴트입니다.\n"
-                            "모든 답변은 반드시 한국어로만 작성하세요. 중국어, 영어 등 외국어를 사용하지 마세요.\n"
-                            "도구 실행 결과를 **주의 깊게 분석하고, 사용자 질문에 가장 적합하고 정확한** 답변을 작성하세요.\n"
-                            "답변은 **명확하고 구체적**이어야 하며, 도구 실행 결과에서 얻은 정보를 **잘 통합**해야 합니다.\n"
-                            "만약 도구 실행 결과만으로는 사용자의 질문에 완전히 답변하기 어렵거나 정보가 부족하다면, **모르는 내용은 추측하지 말고 정보가 제한적이거나 불충분함을 명확하게 밝히세요.**\n"
-                            "\n"
-                            "원본 사용자 질문: {user_query}\n"
-                            "\n"
-                            "사용된 도구 및 결과:\n"
-                            "{tool_results}\n"
-                            "\n"
-                            "이 정보를 바탕으로 사용자의 질문에 대한 종합적이고 정확한 답변을 작성하세요."
-                        """
+당신은 친근한 AI 어시스턴트입니다. 도구 실행 결과를 바탕으로 사용자에게 자연스럽고 간결한 답변을 제공하세요.
+
+**답변 규칙:**
+1. 헤더나 제목 없이 바로 본문으로 시작
+2. 핵심 결과만 간단히 요약해서 먼저 제시
+3. 여러 작업이 있으면 자연스럽게 연결해서 설명
+4. "다운로드 방법", "활용 방안" 같은 불필요한 안내 제거
+5. 과도한 상세 정보는 피하고 필요한 정보만 간결하게
+
+**좋은 답변 예시:**
+- 단일 작업: "1+1은 2입니다."
+- 다중 작업: "1+1은 2이고, 서울 날씨는 맑음이며 기온은 25.8°C입니다."
+- 날씨: "서울은 현재 맑음이고 기온은 25.8°C입니다."
+
+**피해야 할 표현:**
+- "요약 및 결과 안내"
+- "자세한 결과 설명"
+- "다운로드 방법"
+- "성공적으로", "정확히" 같은 과도한 수식어
+
+사용자 질문: {user_query}
+도구 실행 결과: {tool_results}
+
+위 결과를 바탕으로 자연스럽고 간결한 답변을 작성하세요:"""
 
 # 설정 정보 출력 (디버깅용)
 def print_config():
@@ -248,17 +354,16 @@ def print_config():
             "Timeout": TIMEOUT
         },
         "Enabled Tools": ENABLED_TOOLS,
-        # MongoDB 관련 정보 추가
-        "MongoDB": {
-             "Database Name": DATABASE_NAME,
-             "Vector Collection Name": VECTOR_COLLECTION_NAME # config 파일에 추가
-        },
         "Embedding": { # 임베딩 설정 정보 추가
             "Model Name": EMBEDDING_MODEL_NAME
+        },
+        "PostgreSQL": {
+            "Host": PG_DB_HOST,
+            "Port": PG_DB_PORT,
+            "Database": PG_DB_NAME,
+            "User": PG_DB_USER,
+            "Password": PG_DB_PASSWORD
         }
     }
     
     return config_info
-
-# MongoDB 벡터 컬렉션 이름을 config에 추가
-VECTOR_COLLECTION_NAME = "document_chunks" # storage/mongodb_storage.py와 동일하게 설정

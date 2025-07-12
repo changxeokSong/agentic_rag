@@ -1,40 +1,28 @@
 # core/tool_manager.py
 
-import os
 from tools.search_tool import WebSearchTool
 from tools.calculator_tool import CalculatorTool
 from tools.weather_tool import WeatherTool
-# MongoDB 도구 임포트
 from tools.list_files_tool import ListFilesTool
-# internal_vector_search 도구 클래스 임포트
 from tools.vector_search_tool import VectorSearchTool
+from tools.water_level_prediction_tool import WaterLevelPredictionTool
+from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
 from config import ENABLED_TOOLS
 from utils.logger import setup_logger
-from tools.excel_reader_tool import ExcelReaderTool
 
 logger = setup_logger(__name__)
 
 class ToolManager:
     """도구 관리 및 실행 담당"""
     
-    def __init__(self, vector_store=None):
-        """
-        도구 관리자 초기화
-        
-        Args:
-            vector_store (VectorStore, optional): 벡터 데이터베이스 인스턴스
-        """
+    def __init__(self):
+        """도구 관리자 초기화"""
         self.tools = {}
-        self._register_tools(vector_store)
+        self._register_tools()
         logger.info(f"도구 관리자 초기화 완료 (활성화된 도구: {', '.join(self.tools.keys())})")
     
-    def _register_tools(self, vector_store):
-        """
-        환경변수 설정에 따라 활성화된 도구만 등록
-        
-        Args:
-            vector_store (VectorStore): 벡터 데이터베이스 인스턴스
-        """
+    def _register_tools(self):
+        """환경변수 설정에 따라 활성화된 도구만 등록"""
         # 웹 검색 도구
         if "search_tool" in ENABLED_TOOLS:
             self.tools["search_tool"] = WebSearchTool()
@@ -47,18 +35,21 @@ class ToolManager:
         if "weather_tool" in ENABLED_TOOLS:
             self.tools["weather_tool"] = WeatherTool()
 
-        # MongoDB 도구 등록
+        # 파일 목록 조회 도구 등록
         if "list_files_tool" in ENABLED_TOOLS:
             self.tools["list_files_tool"] = ListFilesTool()
 
-        # internal_vector_search 도구 등록
+        # 벡터 검색 도구 등록
         if "vector_search_tool" in ENABLED_TOOLS:
-             # InternalVectorSearchTool은 벡터 스토어가 필요 없습니다 (내부적으로 MongoDBStorage 사용)
             self.tools["vector_search_tool"] = VectorSearchTool()
 
-        # 엑셀 리더 도구 등록
-        if "excel_reader_tool" in ENABLED_TOOLS:
-            self.tools["excel_reader_tool"] = ExcelReaderTool()
+        # 수위 예측 도구 등록
+        if "water_level_prediction_tool" in ENABLED_TOOLS:
+            self.tools["water_level_prediction_tool"] = WaterLevelPredictionTool()
+
+        # 아두이노 수위 센서 도구 등록
+        if "arduino_water_sensor" in ENABLED_TOOLS:
+            self.tools["arduino_water_sensor"] = ArduinoWaterSensorTool()
 
         logger.info(f"등록된 도구: {', '.join(self.tools.keys())}")
     
@@ -80,6 +71,7 @@ class ToolManager:
         # kwargs가 None이면 빈 dict으로 대체
         if kwargs is None:
             kwargs = {}
+                
         logger.info(f"도구 실행: {tool_name}, 인자: {kwargs}")
         tool = self.tools[tool_name]
         

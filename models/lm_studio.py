@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from openai import OpenAI
 from config import (
     LM_STUDIO_BASE_URL, 
@@ -70,6 +71,7 @@ class LMStudioClient:
     def function_call(self, prompt, functions, temperature=None):
         """
         LM Studio 모델을 사용하여 함수 호출을 실행합니다.
+        텍스트 기반 도구 선택 방식을 사용합니다.
         
         Args:
             prompt (str): 모델에 전달할 프롬프트
@@ -82,47 +84,138 @@ class LMStudioClient:
         if temperature is None:
             temperature = TOOL_SELECTION_TEMPERATURE
             
-        logger.info(f"LM Studio 함수 호출, 온도: {temperature}")
+        logger.info(f"LM Studio 텍스트 기반 도구 선택, 온도: {temperature}")
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                functions=functions,
-                function_call="auto",
-                temperature=temperature
-            )
-            
-            message = response.choices[0].message
-            
-            # 함수 호출이 없는 경우: content에 JSON 문자열이 있을 수 있음
-            if not hasattr(message, 'function_call') or message.function_call is None:
-                # content가 JSON 문자열이면 파싱 시도
+            # 기존 OpenAI functions API 시도
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    functions=functions,
+                    function_call="auto",
+                    temperature=temperature
+                )
+                
+                message = response.choices[0].message
+                
+                # 함수 호출 정보 추출 (기존 방식)
+                if hasattr(message, 'function_call') and message.function_call is not None:
+                    function_name = message.function_call.name
+                    try:
+                        function_args = json.loads(message.function_call.arguments)
+                    except json.JSONDecodeError:
+                        logger.error(f"함수 인자 파싱 오류: {message.function_call.arguments}")
+                        function_args = {}
+                    
+                    return {
+                        "name": function_name,
+                        "arguments": function_args
+                    }
+                
+                # 함수 호출이 없는 경우: content에 JSON 문자열이 있을 수 있음
                 content = getattr(message, 'content', None)
                 if content:
-                    try:
-                        result = json.loads(content)
-                        # dict(단일 도구) 또는 list(여러 도구) 모두 허용
-                        if (isinstance(result, dict) and 'name' in result and 'arguments' in result) or isinstance(result, list):
-                            return result
-                    except Exception as e:
-                        logger.error(f"content JSON 파싱 오류: {e}, content: {content}")
-                return None
+                    return self._parse_text_response(content)
+                    
+            except Exception as api_error:
+                logger.warning(f"OpenAI functions API 실패, 텍스트 모드로 전환: {api_error}")
+                
+                # 텍스트 기반 방식으로 폴백
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                
+                content = response.choices[0].message.content
+                if content:
+                    return self._parse_text_response(content)
             
-            # 함수 호출 정보 추출 (기존 방식)
-            function_name = message.function_call.name
-            try:
-                function_args = json.loads(message.function_call.arguments)
-            except json.JSONDecodeError:
-                logger.error(f"함수 인자 파싱 오류: {message.function_call.arguments}")
-                function_args = {}
+            return None
             
-            return {
-                "name": function_name,
-                "arguments": function_args
-            }
         except Exception as e:
-            logger.error(f"LM Studio 함수 호출 오류: {str(e)}")
+            logger.error(f"LM Studio 도구 선택 오류: {str(e)}")
             raise
+    
+    def _parse_text_response(self, content):
+        """텍스트 응답에서 JSON을 파싱합니다."""
+        try:
+            # Markdown 코드 블록 제거
+            if content.strip().startswith('```json'):
+                content = content.strip()[len('```json'):].strip()
+                if content.endswith('```'):
+                    content = content[:-len('```')].strip()
+            elif content.strip().startswith('```'):
+                # 일반적인 코드 블록 제거
+                lines = content.strip().split('\n')
+                if len(lines) > 2 and lines[0].startswith('```') and lines[-1].strip() == '```':
+                    content = '\n'.join(lines[1:-1])
+
+            # JSON 파싱 시도
+            try:
+                result = json.loads(content)
+                # dict(단일 도구) 또는 list(여러 도구) 모두 허용
+                if (isinstance(result, dict) and 'name' in result and 'arguments' in result) or isinstance(result, list):
+                    logger.info(f"JSON 파싱 성공: {result}")
+                    return result
+            except json.JSONDecodeError:
+                # JSON이 아닌 경우 정규식으로 파싱 시도
+                return self._parse_with_regex(content)
+                
+        except Exception as e:
+            logger.error(f"텍스트 응답 파싱 오류: {e}, content: {content}")
+        
+        return None
+    
+    def _parse_with_regex(self, content):
+        """정규식을 사용하여 도구 호출 정보를 추출합니다."""
+        try:
+            # 배열 형태 파싱 시도
+            array_match = re.search(r'\[([^\]]+)\]', content)
+            if array_match:
+                array_content = '[' + array_match.group(1) + ']'
+                try:
+                    result = json.loads(array_content)
+                    if isinstance(result, list):
+                        logger.info(f"배열 정규식 파싱 성공: {result}")
+                        return result
+                except:
+                    pass
+            
+            # 단일 객체 파싱
+            name_match = re.search(r'"name":\s*"([^"]+)"', content)
+            args_match = re.search(r'"arguments":\s*({[^}]*})', content)
+            
+            if name_match:
+                tool_name = name_match.group(1)
+                
+                # arguments 파싱
+                arguments = {}
+                if args_match:
+                    try:
+                        arguments = json.loads(args_match.group(1))
+                    except:
+                        # 간단한 key-value 파싱
+                        arg_matches = re.findall(r'"([^"]+)":\s*"([^"]*)"', args_match.group(1))
+                        arguments = dict(arg_matches)
+                
+                # 간단한 인자 파싱 (expression, query, location 등)
+                if not arguments:
+                    for arg_name in ['expression', 'query', 'location', 'action', 'pump_id']:
+                        arg_match = re.search(f'"{arg_name}":\s*"([^"]*)"', content)
+                        if arg_match:
+                            arguments[arg_name] = arg_match.group(1)
+                
+                logger.info(f"단일 객체 정규식 파싱 성공: {tool_name}, {arguments}")
+                return [{
+                    "name": tool_name,
+                    "arguments": arguments
+                }]
+                
+        except Exception as e:
+            logger.error(f"정규식 파싱 오류: {e}")
+        
+        return None
             
     def get_model_info(self):
         """모델 정보 반환"""
