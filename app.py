@@ -82,6 +82,16 @@ def initialize_system():
                     except Exception as e:
                         logger.error(f"아두이노 자동 연결 중 오류: {e}")
                         st.warning(f"⚠️ 아두이노 연결 시도 중 오류: {str(e)}")
+                
+                # 대시보드용 아두이노 직접 통신 객체 초기화 및 연결
+                from utils.arduino_direct import DirectArduinoComm
+                if 'shared_arduino' not in st.session_state:
+                    st.session_state.shared_arduino = DirectArduinoComm()
+                    # 시스템 초기화 시 아두이노 연결 시도
+                    if st.session_state.shared_arduino.connect():
+                        logger.info("대시보드용 아두이노 연결 성공")
+                    else:
+                        logger.warning("대시보드용 아두이노 연결 실패")
             
             # PostgreSQLStorage 초기화
             try:
@@ -192,6 +202,24 @@ def main():
         initial_sidebar_state="expanded"
     )
     
+    # 페이지 라우팅
+    if 'page' not in st.session_state:
+        st.session_state.page = "main"
+    
+    # 대시보드 페이지로 이동
+    if st.session_state.page == "water_dashboard":
+        try:
+            from water_dashboard import main as dashboard_main
+            dashboard_main()
+            return
+        except ImportError as e:
+            st.error(f"대시보드 모듈 로드 실패: {e}")
+            st.error("필요한 패키지를 설치하세요: pip install plotly")
+            st.session_state.page = "main"  # 메인 페이지로 돌아가기
+    
+    # 메인 페이지 계속 실행
+    st.session_state.page = "main"
+    
     # 다크 모드 호환 CSS 추가
     st.markdown("""
     <style>
@@ -267,6 +295,14 @@ def main():
                 pass # 초기화 성공 메시지 제거
             else:
                 st.error("시스템 초기화에 실패했습니다.")
+        
+        # 대시보드 버튼 및 아두이노 상태
+        if st.session_state.get('system_initialized', False):
+            
+            if st.button("💧 수위 대시보드", type="secondary", use_container_width=True):
+                # Streamlit multipage navigation using session state
+                st.session_state.page = "water_dashboard"
+                st.rerun()
         
         # 시스템 상태
         st.markdown("#### 📊 시스템 상태")

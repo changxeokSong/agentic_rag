@@ -35,3 +35,6 @@ pandas
 python-dotenv
 pydantic
 aiohttp
+
+# Data Visualization for Dashboard
+plotly
