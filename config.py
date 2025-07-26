@@ -190,14 +190,20 @@ def get_available_functions():
         },
         {
             "name": "arduino_water_sensor",
-            "description": "아두이노 USB 시리얼 통신을 통해 수위 센서 값을 읽고 펌프를 제어하는 도구입니다.\n예시: '아두이노 수위 읽어줘', '아두이노 수위 레벨 확인해줘', '펌프1 켜줘', '펌프2 꺼줘', '아두이노 연결해줘'",
+            "description": "아두이노 USB 시리얼 통신을 통해 실시간 수위 센서 값을 읽고 펌프를 제어하는 도구입니다. 실제 센서 하드웨어에서 현재 수위를 측정합니다.\n예시: '현재 수위 알려줘', '수위 측정해줘', '아두이노 수위 읽어줘', '아두이노 수위 레벨 확인해줘', '펌프1 켜줘', '펌프2 꺼줘', '아두이노 연결해줘'",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read_water_level", "read_current_level", "pump1_on", "pump1_off", "pump2_on", "pump2_off", "connect", "disconnect", "status", "test_communication", "pump_status", "read_pump_status"],
-                        "description": "실행할 액션 (read_water_level/read_current_level: 수위 읽기, pump1_on/off: 펌프1 제어, pump2_on/off: 펌프2 제어, connect: 연결, disconnect: 연결 해제, status: 상태 확인, test_communication: 통신 테스트, pump_status/read_pump_status: 펌프 상태 확인)"
+                        "enum": ["read_water_level", "read_water_level_channel", "read_current_level", "pump1_on", "pump1_off", "pump2_on", "pump2_off", "connect", "disconnect", "status", "test_communication", "pump_status", "read_pump_status"],
+                        "description": "실행할 액션 (read_water_level: 모든 센서 읽기, read_water_level_channel: 특정 채널 읽기, read_current_level: 수위 읽기, pump1_on/off: 펌프1 제어, pump2_on/off: 펌프2 제어, connect: 연결, disconnect: 연결 해제, status: 상태 확인, test_communication: 통신 테스트, pump_status/read_pump_status: 펌프 상태 확인)"
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "센서 채널 번호 (read_water_level_channel 액션에서 사용)",
+                        "minimum": 0,
+                        "maximum": 7
                     },
                     "port": {
                         "type": "string",
@@ -280,7 +286,7 @@ def generate_function_selection_prompt():
 11. "[10.5, 11.2, 12.1] 데이터로 수위 예측해줘"
    → [{"name": "water_level_prediction_tool", "arguments": {"water_levels": [10.5, 11.2, 12.1]}}]
 
-12. "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
+12. "현재 수위 알려줘" 또는 "수위 측정해줘" 또는 "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
 
 13. "COM4로 아두이노 연결해줘"
@@ -289,11 +295,17 @@ def generate_function_selection_prompt():
 14. "현재 펌프 상태 알려줘" 또는 "아두이노 펌프 상태 확인해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]
 
-15. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘"
+15. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘" 또는 "지금 수위 어떤지 알려줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
 
 16. "아두이노 통신 테스트해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "test_communication"}}]
+
+17. "채널 1 수위 알려줘" 또는 "센서 1번 수위 확인해줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 1}}]
+
+18. "채널 2 수위 측정해줘" 또는 "센서 2번 수위 읽어줘"
+   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 2}}]
 
 """
     prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "\n사용자 질문 분석하여 JSON 배열로 응답:"

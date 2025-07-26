@@ -32,8 +32,14 @@ class ArduinoWaterSensorTool:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["read_water_level", "read_current_level", "pump1_on", "pump1_off", "pump2_on", "pump2_off", "connect", "disconnect", "status", "test_communication", "pump_status", "read_pump_status"],
-                            "description": "실행할 액션 (read_water_level/read_current_level: 수위 읽기, pump1_on/off: 펌프1 제어, pump2_on/off: 펌프2 제어, connect: 연결, disconnect: 연결 해제, status: 상태 확인, test_communication: 통신 테스트, pump_status/read_pump_status: 펌프 상태 확인)"
+                            "enum": ["read_water_level", "read_water_level_channel", "read_current_level", "pump1_on", "pump1_off", "pump2_on", "pump2_off", "connect", "disconnect", "status", "test_communication", "pump_status", "read_pump_status"],
+                            "description": "실행할 액션 (read_water_level: 모든 센서 읽기, read_water_level_channel: 특정 채널 읽기, read_current_level: 수위 읽기, pump1_on/off: 펌프1 제어, pump2_on/off: 펌프2 제어, connect: 연결, disconnect: 연결 해제, status: 상태 확인, test_communication: 통신 테스트, pump_status/read_pump_status: 펌프 상태 확인)"
+                        },
+                        "channel": {
+                            "type": "integer",
+                            "description": "센서 채널 번호 (read_water_level_channel 액션에서 사용)",
+                            "minimum": 0,
+                            "maximum": 7
                         },
                         "port": {
                             "type": "string",
@@ -95,9 +101,9 @@ class ArduinoWaterSensorTool:
             logger.warning("1. Windows PowerShell (관리자 권한)에서 실행:")
             logger.warning("   winget install usbipd")
             logger.warning("2. 아두이노 USB 연결 후 장치 목록 확인:")
-            logger.warning("   usbipd wsl list")
+            logger.warning("   usbipd list")
             logger.warning("3. 아두이노 장치를 WSL2에 연결 (BUSID는 위에서 확인):")
-            logger.warning("   usbipd wsl attach --busid <BUSID>")
+            logger.warning("   usbipd attach --wsl --busid <BUSID>")
             logger.warning("4. WSL2에서 연결 확인:")
             logger.warning("   ls /dev/ttyACM* 또는 ls /dev/ttyUSB*")
             logger.warning("=" * 60)
@@ -420,8 +426,8 @@ class ArduinoWaterSensorTool:
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
     
-    def _read_water_level(self) -> Dict[str, Any]:
-        """수위 센서 값 읽기"""
+    def _read_water_level(self, channel: Optional[int] = None) -> Dict[str, Any]:
+        """수위 센서 값 읽기 (전체 또는 특정 채널)"""
         if not self.serial_connection or not self.serial_connection.is_open:
             return {"error": "❌ **연결 오류**  \n• 아두이노에 연결되지 않았습니다", "success": False}
         
@@ -433,11 +439,19 @@ class ArduinoWaterSensorTool:
             logger.info("아두이노에서 수위 데이터 읽기 시작...")
             logger.info(f"시리얼 포트: {self.arduino_port}, 보드레이트: {self.baud_rate}")
             
-            # 먼저 아두이노에 데이터 요청 신호 보내기 (Arduino 코드의 명령어에 맞춤)
+            # 아두이노 명령어 생성 (새 펌웨어 프로토콜에 맞춤)
+            if channel is not None:
+                command = f"read_water_level_{channel}"
+                logger.info(f"특정 채널 {channel} 수위 데이터 요청")
+            else:
+                command = "read_water_level"
+                logger.info("모든 센서 채널 수위 데이터 요청")
+            
+            # 명령어 전송
             try:
-                self.serial_connection.write(b"read_water_level\n")
+                self.serial_connection.write(f"{command}\n".encode('utf-8'))
                 self.serial_connection.flush()
-                logger.info("아두이노에 수위 데이터 요청 신호 전송: 'read_water_level'")
+                logger.info(f"아두이노에 수위 데이터 요청 신호 전송: '{command}'")
                 time.sleep(0.5)  # 아두이노가 응답할 시간 제공
             except Exception as e:
                 logger.warning(f"데이터 요청 신호 전송 실패: {e}")
@@ -474,39 +488,48 @@ class ArduinoWaterSensorTool:
                                     all_received_data.append(line)
                                     logger.info(f"수신된 라인: '{line}' (길이: {len(line)})")
                                     
-                                    # 더 유연한 수위 데이터 파싱
+                                    # 새 펌웨어 수위 데이터 파싱
                                     line_lower = line.lower()
                                     
-                                    # 패턴 1: "water level = 85%" 형태
-                                    if 'water level' in line_lower and '%' in line_lower:
+                                    # 패턴 1: "Channel[X] water level = 85%" 형태 (새 펌웨어)
+                                    if 'channel[' in line_lower and 'water level' in line_lower and '%' in line_lower:
+                                        match = re.search(r'channel\[(\d+)\]\s*water level\s*=\s*(\d+)\s*%', line_lower)
+                                        if match:
+                                            channel_num = int(match.group(1))
+                                            water_level = int(match.group(2))
+                                            water_levels.append({'channel': channel_num, 'level': water_level})
+                                            logger.info(f"✅ 수위 데이터 추출 (새 펌웨어): 채널 {channel_num} = {water_level}%")
+                                    
+                                    # 패턴 2: "water level = 85%" 형태 (기존 호환성)
+                                    elif 'water level' in line_lower and '%' in line_lower and 'channel[' not in line_lower:
                                         match = re.search(r'water level.*?(\d+)\s*%', line_lower)
                                         if match:
                                             water_level = int(match.group(1))
-                                            water_levels.append(water_level)
-                                            logger.info(f"✅ 수위 데이터 추출 (패턴1): {water_level}%")
+                                            water_levels.append({'channel': 0, 'level': water_level})  # 기본 채널 0
+                                            logger.info(f"✅ 수위 데이터 추출 (기존호환): {water_level}%")
                                     
-                                    # 패턴 2: "level: 85%" 형태
-                                    elif 'level' in line_lower and '%' in line_lower:
+                                    # 패턴 3: "level: 85%" 형태 (기존 호환성)
+                                    elif 'level' in line_lower and '%' in line_lower and 'channel[' not in line_lower:
                                         match = re.search(r'level.*?(\d+)\s*%', line_lower)
                                         if match:
                                             water_level = int(match.group(1))
-                                            water_levels.append(water_level)
-                                            logger.info(f"✅ 수위 데이터 추출 (패턴2): {water_level}%")
+                                            water_levels.append({'channel': 0, 'level': water_level})
+                                            logger.info(f"✅ 수위 데이터 추출 (레벨): {water_level}%")
                                     
-                                    # 패턴 3: 숫자와 % 기호가 포함된 모든 라인
-                                    elif '%' in line and any(char.isdigit() for char in line):
+                                    # 패턴 4: 숫자와 % 기호가 포함된 모든 라인 (기존 호환성)
+                                    elif '%' in line and any(char.isdigit() for char in line) and 'channel[' not in line_lower:
                                         numbers = re.findall(r'(\d+)\s*%', line)
                                         if numbers:
                                             water_level = int(numbers[0])
-                                            water_levels.append(water_level)
-                                            logger.info(f"✅ 수위 데이터 추출 (패턴3): {water_level}%")
+                                            water_levels.append({'channel': 0, 'level': water_level})
+                                            logger.info(f"✅ 수위 데이터 추출 (일반): {water_level}%")
                                     
-                                    # 패턴 4: 단순 숫자만 있는 경우 (수위 값으로 가정)
+                                    # 패턴 5: 단순 숫자만 있는 경우 (수위 값으로 가정)
                                     elif line.isdigit():
                                         water_level = int(line)
                                         if 0 <= water_level <= 100:  # 합리적인 수위 범위
-                                            water_levels.append(water_level)
-                                            logger.info(f"✅ 수위 데이터 추출 (패턴4): {water_level}%")
+                                            water_levels.append({'channel': 0, 'level': water_level})
+                                            logger.info(f"✅ 수위 데이터 추출 (숫자): {water_level}%")
                                         
                         except UnicodeDecodeError as e:
                             logger.warning(f"데이터 디코딩 오류: {e}")
@@ -534,24 +557,57 @@ class ArduinoWaterSensorTool:
                 logger.info(f"원시 바이트 데이터 샘플: {raw_bytes_data[:3]}")
             
             if water_levels:
-                # 최신 수위 값 사용
-                current_level = water_levels[-1]
-                average_level = sum(water_levels) / len(water_levels)
+                # 다중 채널 데이터 처리
+                if channel is not None:
+                    # 특정 채널 요청인 경우
+                    channel_data = [reading for reading in water_levels if reading.get('channel') == channel]
+                    if channel_data:
+                        current_level = channel_data[-1]['level']
+                        average_level = sum(reading['level'] for reading in channel_data) / len(channel_data)
+                        message = f"💧 **채널 {channel} 수위 센서 측정 완료**  \n• 현재 수위: **{current_level}%**"
+                    else:
+                        return {
+                            "success": False,
+                            "error": f"❌ **채널 {channel} 데이터 없음**  \n• 해당 채널에서 수위 데이터를 찾을 수 없습니다",
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                else:
+                    # 전체 채널 요청인 경우
+                    # 최신 데이터에서 각 채널별 최신 값 추출
+                    channel_levels = {}
+                    for reading in water_levels:
+                        ch = reading.get('channel', 0)
+                        level = reading.get('level')
+                        channel_levels[ch] = level
+                    
+                    # 평균 계산
+                    all_levels = [reading.get('level', reading) if isinstance(reading, dict) else reading for reading in water_levels]
+                    current_level = all_levels[-1] if all_levels else 0
+                    average_level = sum(all_levels) / len(all_levels) if all_levels else 0
+                    
+                    # 메시지 생성
+                    if len(channel_levels) > 1:
+                        channel_info = ", ".join([f"채널{ch}: {lvl}%" for ch, lvl in sorted(channel_levels.items())])
+                        message = f"💧 **다중 채널 수위 센서 측정 완료**  \n• {channel_info}  \n• 평균 수위: **{round(average_level, 1)}%**"
+                    else:
+                        message = f"💧 **수위 센서 측정 완료**  \n• 현재 수위: **{current_level}%**"
                 
                 result = {
                     "success": True,
                     "current_water_level": current_level,
                     "average_water_level": round(average_level, 1),
                     "readings": water_levels,
+                    "channel_levels": channel_levels if channel is None else {channel: current_level},
                     "unit": "percent",
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "message": f"💧 **수위 센서 측정 완료**  \n• 현재 수위: **{current_level}%**",
-                    "raw_data": all_received_data[:10],  # 원본 데이터 일부 포함
+                    "message": message,
+                    "raw_data": all_received_data[:10],
                     "debug_info": {
                         "total_lines": len(all_received_data),
                         "total_bytes_chunks": len(raw_bytes_data),
                         "port": self.arduino_port,
-                        "baud_rate": self.baud_rate
+                        "baud_rate": self.baud_rate,
+                        "requested_channel": channel
                     }
                 }
                 
@@ -789,31 +845,53 @@ class ArduinoWaterSensorTool:
         """수위 데이터와 펌프 상태를 함께 표시하는 메시지 생성"""
         current_level = water_result.get("current_water_level")
         average_level = water_result.get("average_water_level")
+        channel_levels = water_result.get("channel_levels", {})
         pump_status = water_result.get("pump_status", {})
         
-        # 수위 상태 평가
-        if current_level is not None and current_level <= 10:
-            level_status = "🔴 매우 낮음"
+        # 각 채널별 수위 상태 평가 함수
+        def get_level_status(level):
+            if level is not None and level <= 10:
+                return "🔴 매우 낮음"
+            elif level is not None and level <= 30:
+                return "🟡 낮음"
+            elif level is not None and level <= 70:
+                return "🟢 보통"
+            elif level is not None and level <= 90:
+                return "🔵 높음"
+            elif level is not None and level <= 100:
+                return "🔵 매우 높음"
+            else:
+                return "❓ 알 수 없음"
+        
+        # 전체 상태 평가 (가장 낮은 수위 기준)
+        min_level = min(channel_levels.values()) if channel_levels else current_level
+        if min_level is not None and min_level <= 10:
             level_recommendation = "⚠️ 즉시 급수가 필요합니다!"
-        elif current_level is not None and current_level <= 30:
-            level_status = "🟡 낮음"
+        elif min_level is not None and min_level <= 30:
             level_recommendation = "💧 급수를 고려해주세요."
-        elif current_level is not None and current_level <= 70:
-            level_status = "🟢 보통"
+        elif min_level is not None and min_level <= 70:
             level_recommendation = "✅ 정상 수위입니다."
-        elif current_level is not None and current_level <= 90:
-            level_status = "🔵 높음"
-            level_recommendation = "⚡ 배수를 고려해주세요."    
-        elif current_level is not None and current_level <= 100:
-            level_status = "🔵 매우 높음"
+        elif min_level is not None and min_level <= 90:
+            level_recommendation = "⚡ 배수를 고려해주세요."
+        elif min_level is not None and min_level <= 100:
             level_recommendation = "⚡ 배수를 고려해주세요."
         else:
-            level_status = "❓ 알 수 없음"
             level_recommendation = "❓ 알 수 없음"
 
         message = f"💧 **수위 센서 측정 결과**  \n"
-        message += f"• 현재 수위: **{current_level}%** ({level_status})  \n"
-        message += f"• 평균 수위: **{average_level}%**  \n"
+        
+        # 다중 채널 데이터가 있는 경우 각 채널별로 표시
+        if channel_levels and len(channel_levels) > 1:
+            for channel, level in sorted(channel_levels.items()):
+                status = get_level_status(level)
+                message += f"• 채널 {channel}: **{level}%** ({status})  \n"
+            message += f"• 전체 평균: **{average_level}%**  \n"
+        else:
+            # 단일 채널이거나 기존 형식인 경우
+            status = get_level_status(current_level)
+            message += f"• 현재 수위: **{current_level}%** ({status})  \n"
+            message += f"• 평균 수위: **{average_level}%**  \n"
+        
         message += f"{level_recommendation}  \n"
         
         # 펌프 상태 추가
@@ -846,7 +924,7 @@ class ArduinoWaterSensorTool:
         # 펌프 제어 액션인 경우 자동 상태 확인
         return action in ["pump1_on", "pump1_off", "pump2_on", "pump2_off"]
     
-    def execute(self, action: str, port: Optional[str] = None, duration: Optional[int] = None) -> Dict[str, Any]:
+    def execute(self, action: str, port: Optional[str] = None, duration: Optional[int] = None, channel: Optional[int] = None, **kwargs) -> Dict[str, Any]:
         """아두이노 제어 실행"""
         try:
             action = action.lower()
@@ -923,6 +1001,16 @@ class ArduinoWaterSensorTool:
             # 수위 읽기
             if action == "read_water_level" or action == "read_current_level":
                 return self._read_water_level()
+            
+            elif action == "read_water_level_channel":
+                channel = kwargs.get('channel')
+                if channel is None:
+                    return {
+                        "success": False,
+                        "error": "❌ **채널 번호 필요**  \n• read_water_level_channel 액션에는 channel 파라미터가 필요합니다",
+                        "timestamp": current_time
+                    }
+                return self._read_water_level(channel=channel)
             
             # 펌프 제어 (자동 상태 확인 포함)
             elif action == "pump1_on":
