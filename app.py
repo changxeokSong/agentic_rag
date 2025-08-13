@@ -36,6 +36,12 @@ if 'debug_info' not in st.session_state:
 
 if 'config_info' not in st.session_state:
     st.session_state.config_info = print_config()
+if 'last_vector_items' not in st.session_state:
+    st.session_state.last_vector_items = []
+if 'pdf_preview' not in st.session_state:
+    st.session_state.pdf_preview = None
+if 'show_pdf_modal' not in st.session_state:
+    st.session_state.show_pdf_modal = False
 
 def initialize_system():
     """AgenticRAG 시스템 초기화"""
@@ -193,6 +199,45 @@ def display_graph_image(graph_file_id):
         logger.error(f"그래프 이미지 표시 오류: {graph_file_id} - {e}")
         st.error(f"그래프 이미지를 가져오는 중 오류가 발생했습니다: {e}")
 
+def display_pdf_inline(file_bytes: bytes, filename: str):
+    """PDF 바이트를 인라인으로 렌더링"""
+    try:
+        b64_pdf = base64.b64encode(file_bytes).decode('utf-8')
+        pdf_iframe = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
+        st.markdown(pdf_iframe, unsafe_allow_html=True)
+    except Exception as e:
+        logger.error(f"PDF 인라인 표시 오류: {filename} - {e}")
+        st.error(f"PDF를 표시하는 중 오류가 발생했습니다: {e}")
+
+def open_pdf_modal(file_id: str, filename: str):
+    st.session_state.pdf_preview = {"file_id": file_id, "filename": filename}
+    st.session_state.show_pdf_modal = True
+
+def close_pdf_modal():
+    st.session_state.pdf_preview = None
+    st.session_state.show_pdf_modal = False
+
+def render_pdf_modal():
+    if not st.session_state.get('show_pdf_modal'):
+        return
+    preview = st.session_state.get('pdf_preview') or {}
+    file_id = preview.get('file_id')
+    filename = preview.get('filename') or '미리보기'
+    storage = st.session_state.get('storage')
+    if not storage or not file_id:
+        st.session_state.show_pdf_modal = False
+        return
+    file_bytes = storage.get_file_content_by_id(file_id)
+    # Modal API가 없을 수 있으므로 공통 fallback(expander) 사용
+    with st.expander(f"📄 {filename} (미리보기)", expanded=True):
+        if file_bytes:
+            display_pdf_inline(bytes(file_bytes), filename)
+        else:
+            st.warning("PDF 데이터를 불러오지 못했습니다.")
+        if st.button("닫기", key="close_pdf_expander_btn"):
+            close_pdf_modal()
+            st.rerun()
+
 def main():
     """Streamlit 앱 메인 함수"""
     st.set_page_config(
@@ -219,6 +264,9 @@ def main():
     
     # 메인 페이지 계속 실행
     st.session_state.page = "main"
+
+    # 전역 모달 렌더링 훅 (세션 state에 따라 표시)
+    render_pdf_modal()
     
     # 다크 모드 호환 CSS 추가
     st.markdown("""
@@ -403,7 +451,6 @@ def main():
             
             for info in tool_info.values():
                 tool_icon = {
-                    'search_tool': '🔍',
                     'calculator_tool': '🧮',
                     'weather_tool': '🌤️',
                     'list_files_tool': '📁',
@@ -411,7 +458,7 @@ def main():
                     'arduino_water_sensor': '🔌',
                     'water_level_prediction_tool': '📊'
                 }.get(info['name'], '🔧')
-                
+
                 st.markdown(f"""
                 <div style='padding: 12px; background: linear-gradient(135deg, #f8f9ff 0%, #e8f4ff 100%); 
                             border-radius: 8px; margin: 5px 0; border-left: 3px solid #667eea;
@@ -461,13 +508,68 @@ def main():
                         # 메인 응답 표시
                         message_placeholder.markdown(response_text)
                         
-                        # 상세 정보가 있는 경우 접을 수 있는 형태로 표시
+                        # 벡터 검색 출처 및 PDF 미리보기/다운로드 (메인 응답 바로 아래에 요약 표시)
+                        try:
+                            vector_items = []
+                            for k, v in tool_results.items():
+                                base_tool_name = k.split('_')[0] + '_' + k.split('_')[1] + '_tool' if '_' in k else k
+                                if base_tool_name == 'vector_search_tool' and isinstance(v, list):
+                                    vector_items.extend(v)
+
+                            if vector_items:
+                                # 파일 기준으로 모아 상위 5개 출처만 노출
+                                seen = set()
+                                unique_sources = []
+                                for item in vector_items:
+                                    fname = item.get('filename')
+                                    fid = item.get('file_id')
+                                    key = (fname, fid)
+                                    if key not in seen:
+                                        seen.add(key)
+                                        unique_sources.append(item)
+
+                                st.markdown("---")
+                                # 사용자 요청에 따라 상단 텍스트 출처 표시는 제거
+
+                                # 첫 번째 PDF 출처에 한해 빠른 미리보기/다운로드 제공
+                                storage = st.session_state.get('storage')
+                                for item in unique_sources:
+                                    fname = item.get('filename') or ''
+                                    fid = item.get('file_id')
+                                    if fname.lower().endswith('.pdf') and fid and storage:
+                                        btn_cols = st.columns(2)
+                                        with btn_cols[0]:
+                                            if st.button("👁️ 미리보기", key=f"src_quick_preview_{fid}", use_container_width=True):
+                                                open_pdf_modal(fid, fname)
+                                                st.rerun()
+                                        with btn_cols[1]:
+                                            try:
+                                                fb = storage.get_file_content_by_id(fid)
+                                                if fb:
+                                                    st.download_button(
+                                                        label="⬇️ 첫 번째 PDF 다운로드",
+                                                        data=bytes(fb),
+                                                        file_name=fname,
+                                                        mime='application/pdf',
+                                                        key=f"src_quick_download_{fid}",
+                                                        use_container_width=True,
+                                                        type="secondary"
+                                                    )
+                                                else:
+                                                    st.info("다운로드할 PDF 데이터를 찾을 수 없습니다.")
+                                            except Exception as e:
+                                                logger.error(f"PDF 다운로드 준비 오류: {fid} - {e}")
+                                                st.error("PDF 다운로드 준비 중 오류가 발생했습니다.")
+                                        break
+                        except Exception as e:
+                            logger.error(f"출처 요약 섹션 렌더링 오류: {e}")
+                        
+                        # 상세 정보가 있는 경우 접을 수 있는 형태로 표시 (중복 출처 표시 제거)
                         if tool_results and len(tool_results) > 0:
                             with st.expander("🔍 상세 실행 정보", expanded=False):
                                 for i, (tool_name, result) in enumerate(tool_results.items()):
                                     # 도구 아이콘 매핑
                                     tool_icon = {
-                                        'search_tool': '🔍',
                                         'calculator_tool': '🧮', 
                                         'weather_tool': '🌤️',
                                         'list_files_tool': '📁',
@@ -516,15 +618,7 @@ def main():
                                                 status_emoji = "🟢" if result['status'] == "ON" else "🔴"
                                                 st.markdown(f"**⚡ 상태:** {status_emoji} {result['status']}")
                                         
-                                        # 검색 결과 특별 표시
-                                        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
-                                            st.markdown(f"**📊 검색 결과:** {len(result)}개 항목")
-                                            for item in result[:3]:  # 상위 3개만 표시
-                                                if 'title' in item:
-                                                    st.markdown(f"• {item['title']}")
-                                                elif 'content' in item:
-                                                    content_preview = item['content'][:100] + "..." if len(item['content']) > 100 else item['content']
-                                                    st.markdown(f"• {content_preview}")
+                                        # 검색 결과는 상단 출처 섹션에서 이미 요약 표시하므로 중복 표시 생략
                                         
                                         # 전체 JSON은 HTML details로 표시
                                         import json as json_lib
@@ -538,7 +632,55 @@ def main():
                                         </details>
                                         """, unsafe_allow_html=True)
                                     else:
-                                        st.markdown(f"**결과:** {str(result)}")
+                                            # 리스트 기반 결과 (예: 벡터 검색 결과) 전용 표시
+                                            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
+                                                st.markdown(f"**📊 검색 결과:** {len(result)}개 항목")
+                                                storage = st.session_state.get('storage')
+                                                for idx, item in enumerate(result):
+                                                    filename = item.get('filename') or '파일 이름 알 수 없음'
+                                                    file_id = item.get('file_id')
+                                                    chunk_index = item.get('chunk_index', 'N/A')
+                                                    score = item.get('score', 'N/A')
+                                                    content_preview = item.get('content', '')
+                                                    with st.container(border=True):
+                                                        st.markdown(f"**출처:** `{filename}`  |  **청크:** {chunk_index}  |  **점수:** {score}")
+                                                        st.markdown(content_preview)
+                                                        # PDF 미리보기/다운로드 버튼 (PDF 파일에 한함)
+                                                        if filename and filename.lower().endswith('.pdf') and file_id and storage:
+                                                            btn_cols = st.columns(2)
+                                                            with btn_cols[0]:
+                                                                if st.button("👁️ PDF 미리보기", key=f"preview_pdf_{tool_name}_{idx}_{file_id}", use_container_width=True):
+                                                                    try:
+                                                                        file_bytes = storage.get_file_content_by_id(file_id)
+                                                                        if file_bytes:
+                                                                            display_pdf_inline(bytes(file_bytes), filename)
+                                                                        else:
+                                                                            st.warning("PDF 데이터를 불러오지 못했습니다.")
+                                                                    except Exception as e:
+                                                                        logger.error(f"PDF 미리보기 오류: {file_id} - {e}")
+                                                                        st.error("PDF 미리보기에 실패했습니다.")
+                                                            with btn_cols[1]:
+                                                                try:
+                                                                    file_bytes = None
+                                                                    if storage:
+                                                                        file_bytes = storage.get_file_content_by_id(file_id)
+                                                                    if file_bytes:
+                                                                        st.download_button(
+                                                                            label="⬇️ PDF 다운로드",
+                                                                            data=bytes(file_bytes),
+                                                                            file_name=filename,
+                                                                            mime='application/pdf',
+                                                                            key=f"download_pdf_{tool_name}_{idx}_{file_id}",
+                                                                            use_container_width=True,
+                                                                            type="secondary"
+                                                                        )
+                                                                    else:
+                                                                        st.info("다운로드할 PDF 데이터를 찾을 수 없습니다.")
+                                                                except Exception as e:
+                                                                    logger.error(f"PDF 다운로드 준비 오류: {file_id} - {e}")
+                                                                    st.error("PDF 다운로드 준비 중 오류가 발생했습니다.")
+                                            else:
+                                                st.markdown(f"**결과:** {str(result)}")
                                     
                                     # 마지막 항목이 아니면 구분선 추가
                                     if i < len(tool_results) - 1:
@@ -601,6 +743,10 @@ def main():
 
                 # PostgreSQLStorage 싱글톤 인스턴스 가져오기
                 pg_storage = PostgreSQLStorage.get_instance()
+                if pg_storage is None:
+                    st.error("스토리지 시스템이 초기화되지 않았습니다.")
+                    st.session_state.is_uploading = False
+                    return
 
                 # 파일 데이터를 읽어서 PostgreSQL에 저장
                 file_data = uploaded_file_postgres.getvalue()
@@ -657,13 +803,17 @@ def main():
             if 'postgres_files' not in st.session_state or st.session_state.postgres_files is None:
                  # PostgreSQLStorage 인스턴스 가져와서 list_files 호출
                 mongo_storage = PostgreSQLStorage.get_instance()
-                try:
-                     st.session_state.postgres_files = mongo_storage.list_files()
-                     logger.info(f"PostgreSQL 파일 목록 세션 상태에 저장: {len(st.session_state.postgres_files)}개")
-                except Exception as e:
-                     logger.error(f"PostgreSQL 파일 목록 조회 오류: {e}")
-                     st.session_state.postgres_files = [] # 오류 발생 시 빈 리스트
-                     st.warning("파일 목록을 가져오는 중 오류가 발생했습니다. PostgreSQL 연결 상태를 확인하세요.")
+                if mongo_storage is None:
+                    st.session_state.postgres_files = []
+                    st.warning("스토리지 시스템이 초기화되지 않았습니다.")
+                else:
+                    try:
+                         st.session_state.postgres_files = mongo_storage.list_files()
+                         logger.info(f"PostgreSQL 파일 목록 세션 상태에 저장: {len(st.session_state.postgres_files)}개")
+                    except Exception as e:
+                         logger.error(f"PostgreSQL 파일 목록 조회 오류: {e}")
+                         st.session_state.postgres_files = [] # 오류 발생 시 빈 리스트
+                         st.warning("파일 목록을 가져오는 중 오류가 발생했습니다. PostgreSQL 연결 상태를 확인하세요.")
 
             if st.session_state.postgres_files:
                 # 각 파일 정보와 다운로드 버튼을 표시
@@ -693,34 +843,37 @@ def main():
                          # 다운로드 버튼 추가 (파일 정보 바로 아래에 배치)
                          # file_id가 유효한 문자열 ID인지 확인
                          if file_id != 'ID 없음':
-                             # PostgreSQLStorage 싱글톤 인스턴스 가져오기
-                             mongo_storage = PostgreSQLStorage.get_instance()
+                              # PostgreSQLStorage 싱글톤 인스턴스 가져오기
+                              mongo_storage = PostgreSQLStorage.get_instance()
+                              if mongo_storage is None:
+                                  st.warning("스토리지 시스템이 초기화되지 않았습니다.")
+                                  continue
  
-                             # 파일 내용 가져오기 (다운로드 버튼 클릭 시 실행)
-                             # 파일을 다운로드 버튼의 data 인자로 직접 전달하면 Streamlit이 처리
-                             # get_file_content_by_id 호출은 download_button이 실제로 렌더링될 때가 아닌,
-                             # 페이지가 로드될 때마다 발생하므로 주의해야 함.
-                             # 여기서는 단순화를 위해 get_file_content_by_id를 호출하는 로직 유지
-                             # 실제 앱에서는 다운로드 버튼 클릭 시 콜백 함수 등에서 파일 내용을 가져오는 것이 효율적
-                             file_content = mongo_storage.get_file_content_by_id(file_id)
+                              # 파일 내용 가져오기 (다운로드 버튼 클릭 시 실행)
+                              # 파일을 다운로드 버튼의 data 인자로 직접 전달하면 Streamlit이 처리
+                              # get_file_content_by_id 호출은 download_button이 실제로 렌더링될 때가 아닌,
+                              # 페이지가 로드될 때마다 발생하므로 주의해야 함.
+                              # 여기서는 단순화를 위해 get_file_content_by_id를 호출하는 로직 유지
+                              # 실제 앱에서는 다운로드 버튼 클릭 시 콜백 함수 등에서 파일 내용을 가져오는 것이 효율적
+                              file_content = mongo_storage.get_file_content_by_id(file_id)
 
-                             if file_content is not None:
-                                 # memoryview를 bytes로 변환하여 download_button에 전달
-                                 file_content_bytes = bytes(file_content)
+                              if file_content is not None:
+                                  # memoryview를 bytes로 변환하여 download_button에 전달
+                                  file_content_bytes = bytes(file_content)
 
-                                 st.download_button(
-                                     label="⬇️ 다운로드",
-                                     data=file_content_bytes,
-                                     file_name=filename,
-                                     mime='application/octet-stream',
-                                     key=f"download_{file_id}",
-                                     use_container_width=True,
-                                     type="secondary"
-                                 )
-                             else:
-                                 st.warning(f"'{filename}' 파일 내용을 가져오지 못했습니다 (ID: {file_id}).")
-                                 # 디버깅을 위해 로그에 기록하거나 터미널에 출력할 수 있습니다.
-                                 # print(f"DEBUG: Failed to get content for file ID: {file_id}") # 터미널 출력
+                                  st.download_button(
+                                      label="⬇️ 다운로드",
+                                      data=file_content_bytes,
+                                      file_name=filename,
+                                      mime='application/octet-stream',
+                                      key=f"download_{file_id}",
+                                      use_container_width=True,
+                                      type="secondary"
+                                  )
+                              else:
+                                  st.warning(f"'{filename}' 파일 내용을 가져오지 못했습니다 (ID: {file_id}).")
+                                  # 디버깅을 위해 로그에 기록하거나 터미널에 출력할 수 있습니다.
+                                  # print(f"DEBUG: Failed to get content for file ID: {file_id}") # 터미널 출력
                          else:
                              st.warning(f"'{filename}' 파일 ID가 유효하지 않습니다: {file_id}")
 

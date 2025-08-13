@@ -56,14 +56,72 @@ class PostgreSQLStorage:
             return # Initialize fails if required vars are not set
 
         try:
+            # libpq 환경 변수에 비UTF-8 값이 설정되어 있으면 내부 디코딩에서 실패할 수 있음
+            # 연결 인자로 모두 전달할 것이므로 libpq 관련 환경 변수는 임시로 제거
+            self._libpq_env_backup = {}
+            try:
+                _libpq_keys = [
+                    "PGPASSWORD", "PGSERVICE", "PGSERVICEFILE", "PGPASSFILE",
+                    "PGHOST", "PGHOSTADDR", "PGPORT", "PGUSER", "PGDATABASE"
+                ]
+                for k in _libpq_keys:
+                    if k in os.environ:
+                        self._libpq_env_backup[k] = os.environ[k]
+                        del os.environ[k]
+            except Exception as e:
+                logger.debug(f"libpq 환경 변수 초기화 경고: {e}")
+
+            # libpq가 사용자 홈/시스템 서비스 파일을 읽으며 인코딩 문제가 발생할 수 있어
+            # 안전한 임시 빈 파일로 우회 (비밀번호는 직접 전달하므로 .pgpass 불필요)
+            self._temp_pgservice = None
+            self._temp_pgpass = None
+            self._temp_pgsysconfdir = None
+            try:
+                if not os.environ.get("PGSERVICEFILE"):
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".conf")
+                    tmp.close()
+                    os.environ["PGSERVICEFILE"] = tmp.name
+                    self._temp_pgservice = tmp.name
+                if not os.environ.get("PGPASSFILE"):
+                    tmp2 = tempfile.NamedTemporaryFile(delete=False)
+                    tmp2.close()
+                    os.environ["PGPASSFILE"] = tmp2.name
+                    self._temp_pgpass = tmp2.name
+                if not os.environ.get("PGSYSCONFDIR"):
+                    # 시스템 서비스 디렉토리 우회를 위한 임시 폴더
+                    tmpdir = tempfile.mkdtemp(prefix="pgsysconf_")
+                    os.environ["PGSYSCONFDIR"] = tmpdir
+                    self._temp_pgsysconfdir = tmpdir
+                logger.debug(
+                    f"libpq files pinned: PGSERVICEFILE={os.environ.get('PGSERVICEFILE')}, "
+                    f"PGPASSFILE={os.environ.get('PGPASSFILE')}, PGSYSCONFDIR={os.environ.get('PGSYSCONFDIR')}"
+                )
+            except Exception as e:
+                logger.debug(f"libpq 파일 경로 설정 중 경고: {e}")
+
+            # 윈도우/로케일 이슈 방지를 위해 클라이언트 인코딩을 강제 지정
+            try:
+                os.environ.setdefault("PGCLIENTENCODING", "UTF8")
+            except Exception:
+                pass
+
+            connection_kwargs = {
+                "host": str(self.db_host) if self.db_host is not None else None,
+                "database": str(self.db_name) if self.db_name is not None else None,
+                "user": str(self.db_user) if self.db_user is not None else None,
+                "password": str(self.db_password) if self.db_password is not None else None,
+                "port": int(self.db_port) if self.db_port is not None else None,
+                # libpq에 클라이언트 인코딩 옵션 전달
+                "options": "-c client_encoding=UTF8",
+            }
+
             # 데이터베이스 연결
-            self._connection = psycopg2.connect(
-                host=self.db_host,
-                database=self.db_name,
-                user=self.db_user,
-                password=self.db_password,
-                port=self.db_port
-            )
+            self._connection = psycopg2.connect(**connection_kwargs)
+            try:
+                # 연결 직후에도 안전하게 클라이언트 인코딩을 강제
+                self._connection.set_client_encoding('UTF8')
+            except Exception:
+                pass
             # 커서 생성 (딕셔너리 형태로 결과를 받기 위해 cursor_factory 사용)
             self._cursor = self._connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             logger.info("PostgreSQL 연결 성공!")
@@ -90,6 +148,16 @@ class PostgreSQLStorage:
 
             self._initialized = True # 초기화 완료 플래그 설정
 
+        except UnicodeDecodeError as e:
+            logger.error(
+                "PostgreSQL DSN 인코딩 오류(UnicodeDecodeError). 환경 변수/서비스 인코딩 확인 필요. "
+                f"host={self.db_host}, db={self.db_name}, user={self.db_user}, port={self.db_port}"
+            )
+            logger.error(f"원본 오류: {e}")
+            self._initialized = False
+            self._connection = None
+            self._cursor = None
+            raise
         except (psycopg2.OperationalError, psycopg2.Error) as e:
             logger.error(f"PostgreSQL 데이터베이스 연결 오류: {e}", exc_info=True)
             self._initialized = False
@@ -118,6 +186,30 @@ class PostgreSQLStorage:
             self._connection = None
         self._initialized = False # 연결 종료 시 초기화 상태 해제
         logger.info("PostgreSQL 연결 종료.")
+        # 생성한 임시 libpq 파일 제거
+        try:
+            if getattr(self, "_temp_pgservice", None) and os.path.exists(self._temp_pgservice):
+                os.remove(self._temp_pgservice)
+                self._temp_pgservice = None
+            if getattr(self, "_temp_pgpass", None) and os.path.exists(self._temp_pgpass):
+                os.remove(self._temp_pgpass)
+                self._temp_pgpass = None
+            if getattr(self, "_temp_pgsysconfdir", None) and os.path.isdir(self._temp_pgsysconfdir):
+                # 디렉토리 내부 비우고 제거
+                try:
+                    for name in os.listdir(self._temp_pgsysconfdir):
+                        try:
+                            path = os.path.join(self._temp_pgsysconfdir, name)
+                            if os.path.isfile(path):
+                                os.remove(path)
+                        except Exception:
+                            pass
+                    os.rmdir(self._temp_pgsysconfdir)
+                except Exception:
+                    pass
+                self._temp_pgsysconfdir = None
+        except Exception as e:
+            logger.debug(f"임시 파일 정리 중 경고: {e}")
 
     def execute_query(self, query, params=None, fetchone=False, fetchall=False, commit=False):
         """SQL 쿼리 실행을 위한 헬퍼 메소드"""
@@ -462,6 +554,55 @@ class PostgreSQLStorage:
 
         except Exception as e:
             logger.error(f"PostgreSQL 벡터 검색 중 오류 발생: {e}")
+            raise
+
+    def context_search(self, query: str, file_filter: str = None, tags_filter: list[str] = None, top_k: int = TOP_K_RESULTS):
+        """단순 키워드 기반 컨텍스트 검색 (ILIKE)을 수행합니다."""
+        logger.info(f"PostgreSQL 컨텍스트(키워드) 검색 시도: {query}")
+        try:
+            search_query = "SELECT c.content, c.metadata, 0.0 AS score FROM chunks c"
+            where_clauses = ["c.content ILIKE %s"]
+            params = [f"%{query}%"]
+
+            # 파일 필터 처리 (파일명 → id)
+            if file_filter:
+                file_row = self.execute_query(
+                    "SELECT id FROM files WHERE filename = %s",
+                    params=(file_filter,),
+                    fetchone=True
+                )
+                if file_row:
+                    file_id_int = file_row['id']
+                    where_clauses.append("c.file_id = %s")
+                    params.append(file_id_int)
+                else:
+                    logger.warning(f"컨텍스트 검색: 파일 필터 '{file_filter}'에 해당하는 파일 없음")
+                    return []
+
+            # 태그 필터 처리 (metadata->'tags')
+            if tags_filter:
+                where_clauses.append("c.metadata->'tags' ?| ARRAY[%s]")
+                params.append(tags_filter)
+
+            if where_clauses:
+                search_query += " WHERE " + " AND ".join(where_clauses)
+
+            search_query += " LIMIT %s"
+            params.append(top_k)
+
+            rows = self.execute_query(search_query, params=tuple(params), fetchall=True)
+            formatted_results = []
+            if rows:
+                for row in rows:
+                    formatted_results.append({
+                        'content': row['content'],
+                        'metadata': row['metadata'],
+                        'score': row.get('score', 0.0)
+                    })
+
+            return formatted_results
+        except Exception as e:
+            logger.error(f"PostgreSQL 컨텍스트 검색 중 오류 발생: {e}")
             raise
 
     def is_file_exist(self, filename: str) -> bool:

@@ -4,6 +4,7 @@ import os
 import json
 from dotenv import load_dotenv
 from langchain_teddynote import logging
+import weave
 
 # .env 파일 로드
 load_dotenv()
@@ -48,7 +49,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
 # 활성화된 도구 확인
 # MongoDB 도구 추가
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "search_tool,calculator_tool,weather_tool,list_files_tool,vector_search_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,calculator_tool,weather_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
 
 # PostgreSQL configuration
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")
@@ -61,20 +62,7 @@ PG_DB_PASSWORD = os.getenv("PG_DB_PASSWORD", "synergy") # 필수 설정
 def get_available_functions():
     """환경변수에 따라 활성화된 도구만 반환"""
     all_functions = [
-        {
-            "name": "search_tool",
-            "description": "웹에서 정보를 검색합니다. 최신 뉴스, 일반 상식, 외부 정보, 실시간 이슈 등 인터넷에서 찾을 수 있는 정보가 필요할 때 사용하세요.\n예시: '최신 AI 트렌드 알려줘', '오늘의 주요 뉴스 알려줘'",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "검색할 쿼리"
-                    }
-                },
-                "required": ["query"]
-            }
-        },
+        # 검색(웹) 도구 제거됨
         {
             "name": "vector_search_tool",
             "description": "업로드된 내부 문서(예: PDF, 텍스트 파일 등)에서 벡터 검색을 통해 정보를 검색합니다. 특정 파일 내용, 사내 문서, 업로드한 보고서 등 내부 자료 검색이 필요할 때 사용하세요. 필요한 경우 특정 파일 이름이나 태그로 검색을 필터링할 수 있습니다.",
@@ -98,6 +86,12 @@ def get_available_functions():
                         "type": "integer",
                         "description": f"반환할 검색 결과의 최대 개수 (기본값: {TOP_K_RESULTS})",
                          "default": TOP_K_RESULTS
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["auto", "vector", "context"],
+                        "description": "검색 모드: auto(기본), vector(임베딩 유사도), context(키워드)",
+                        "default": "auto"
                     }
                 },
                 "required": ["query"]
@@ -249,6 +243,23 @@ def generate_function_selection_prompt():
     for i, func in enumerate(AVAILABLE_FUNCTIONS, 1):
         tools_desc.append(f"{i}. {func['name']}: {func['description']}")
 
+    # 도구 사용 가이드 (특히 vector_search_tool)
+    vector_guide = """
+**vector_search_tool 사용 가이드**
+
+- 언제 사용: 사용자가 업로드한 문서/보고서/PDF/텍스트 등 내부 자료에서 답을 찾으려는 의도가 분명할 때.
+- 필수 파라미터: snake_case 키만 사용하세요. `query`는 반드시 포함.
+- 선택 파라미터:
+  - `file_filter`(string): 특정 파일명이 질문에 명시되면 그대로 설정. 파일명이 명확하지 않으면 생략.
+  - `tags_filter`(array[string]): 질문에 태그/키워드가 명시된 경우 리스트로 설정.
+  - `top_k`(integer): 기본 10. 상위 몇 개 결과가 필요한지 질문에 있으면 반영.
+  - `mode`(string): `auto`(기본) | `vector` | `context`.
+    - 파일 내용의 의미/요약 질의 → `auto` 권장(먼저 vector 후 context 폴백)
+    - 단순 키워드 포함 여부 확인 → `context`
+- 금지: camelCase 키(`fileFilter`, `tagsFilter`, `topK`)는 사용하지 마세요.
+- 예: 파일명이 따옴표로 언급되면 그대로 `file_filter`에 넣습니다. 예: "내부 보고서.pdf" → `file_filter: "내부 보고서.pdf"`.
+"""
+
     # 예시 추가
     example_prompt = """
 **예시:**
@@ -268,8 +279,14 @@ def generate_function_selection_prompt():
 5. "서울 날씨와 2+2 계산해줘"  
    → [{"name": "weather_tool", "arguments": {"location": "서울"}}, {"name": "calculator_tool", "arguments": {"expression": "2+2"}}]
 
-6. "최신 AI 뉴스 검색해줘"
-   → [{"name": "search_tool", "arguments": {"query": "최신 AI 뉴스"}}]
+ 6. "업로드한 보고서에서 삼성의 자체 개발 AI 이름 찾아줘"
+    → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "mode": "auto", "top_k": 10}}]
+
+ 6-1. "'내부 보고서.pdf'에서 삼성 자체 개발 AI 이름 찾아줘"
+    → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "file_filter": "내부 보고서.pdf", "mode": "auto"}}]
+
+ 6-2. "태그에 '삼성','AI'가 붙은 문서에서 자체 개발 AI 이름 찾아줘 (상위 5개)"
+    → [{"name": "vector_search_tool", "arguments": {"query": "자체 개발 AI 이름", "tags_filter": ["삼성", "AI"], "top_k": 5, "mode": "auto"}}]
 
 7. "펌프1 켜줘" 또는 "아두이노 펌프1 켜줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_on"}}]
@@ -308,7 +325,7 @@ def generate_function_selection_prompt():
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 2}}]
 
 """
-    prompt = base_prompt + "\n".join(tools_desc) + example_prompt + "\n사용자 질문 분석하여 JSON 배열로 응답:"
+    prompt = base_prompt + "\n".join(tools_desc) + "\n\n" + vector_guide + example_prompt + "\n사용자 질문 분석하여 JSON 배열로 응답:"
     return prompt
 
 # 도구 선택 프롬프트

@@ -1,6 +1,5 @@
 # core/tool_manager.py
 
-from tools.search_tool import WebSearchTool
 from tools.calculator_tool import CalculatorTool
 from tools.weather_tool import WeatherTool
 from tools.list_files_tool import ListFilesTool
@@ -23,9 +22,7 @@ class ToolManager:
     
     def _register_tools(self):
         """환경변수 설정에 따라 활성화된 도구만 등록"""
-        # 웹 검색 도구
-        if "search_tool" in ENABLED_TOOLS:
-            self.tools["search_tool"] = WebSearchTool()
+        # 웹 검색 도구 제거됨
         
         # 계산 도구
         if "calculator_tool" in ENABLED_TOOLS:
@@ -72,15 +69,57 @@ class ToolManager:
         if kwargs is None:
             kwargs = {}
                 
-        logger.info(f"도구 실행: {tool_name}, 인자: {kwargs}")
+        # 인자 정규화 (camelCase → snake_case 등)
+        normalized_kwargs = self._normalize_arguments(tool_name, kwargs or {})
+        logger.info(f"도구 실행: {tool_name}, 인자: {normalized_kwargs}")
         tool = self.tools[tool_name]
         
         try:
-            result = tool.execute(**kwargs)
+            result = tool.execute(**normalized_kwargs)
             return result
         except Exception as e:
             logger.error(f"도구 실행 오류 ({tool_name}): {str(e)}")
             return f"도구 실행 중 오류가 발생했습니다: {str(e)}"
+
+    def _normalize_arguments(self, tool_name: str, kwargs: dict) -> dict:
+        """LLM이 반환하는 다양한 키 스타일을 표준 키로 정규화한다."""
+        if not isinstance(kwargs, dict):
+            return {}
+
+        # 공통 camelCase → snake_case 매핑 후보
+        common_map = {
+            'fileFilter': 'file_filter',
+            'tagsFilter': 'tags_filter',
+            'topK': 'top_k',
+        }
+
+        normalized = dict(kwargs)
+        for src, dst in common_map.items():
+            if src in normalized and dst not in normalized:
+                normalized[dst] = normalized.pop(src)
+
+        # 툴별 특이 타입 보정
+        if tool_name == 'vector_search_tool':
+            # file_filter: str | list[str] → str (첫 번째 값 사용)
+            ff = normalized.get('file_filter')
+            if isinstance(ff, list):
+                if len(ff) > 0:
+                    logger.warning(f"vector_search_tool.file_filter 리스트 인자 감지. 첫 항목만 사용: {ff[0]}")
+                    normalized['file_filter'] = ff[0]
+                else:
+                    normalized['file_filter'] = None
+
+            # tags_filter: str → [str]
+            tf = normalized.get('tags_filter')
+            if isinstance(tf, str):
+                normalized['tags_filter'] = [tf]
+
+            # top_k: 문자열일 수 있음 → int 변환 시도
+            tk = normalized.get('top_k')
+            if isinstance(tk, str) and tk.isdigit():
+                normalized['top_k'] = int(tk)
+
+        return normalized
     
     def get_all_tools(self):
         """모든 도구 목록 반환"""

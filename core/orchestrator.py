@@ -39,6 +39,9 @@ class Orchestrator:
                 # 수위 예측 도구의 경우 사용자 질문을 추가로 전달
                 if tool_name == "water_level_prediction_tool":
                     arguments["user_query"] = query
+                # 벡터 검색 도구에 query 누락 시 보정
+                if tool_name == "vector_search_tool" and "query" not in arguments:
+                    arguments["query"] = query
                 
                 result = self.tool_manager.execute_tool(tool_name, **arguments)
                 logger.info(f"도구 실행 결과: {result}")

@@ -19,21 +19,12 @@ def init_dashboard_session():
     if 'last_update' not in st.session_state:
         st.session_state.last_update = None
     
-    if 'auto_refresh' not in st.session_state:
-        st.session_state.auto_refresh = False  # 자동 새로고침 기본값을 False로 변경
-    
-    if 'refresh_interval' not in st.session_state:
-        st.session_state.refresh_interval = 5  # 5초
-    
     # 사용자 인터랙션 추적을 위한 상태 추가
     if 'user_interaction' not in st.session_state:
         st.session_state.user_interaction = False
     
     if 'pump_control_in_progress' not in st.session_state:
         st.session_state.pump_control_in_progress = False
-    
-    if 'last_auto_refresh' not in st.session_state:
-        st.session_state.last_auto_refresh = time.time()
     
     # 수동 새로고침 여부 추적
     if 'manual_refresh_clicked' not in st.session_state:
@@ -333,8 +324,8 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # 상단 제어 패널
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    # 상단 제어 패널 (자동 새로고침 제거)
+    col1, col2 = st.columns([2, 1])
     
     with col1:
         if st.button("🔄 수동 새로고침", type="primary", use_container_width=True):
@@ -344,36 +335,13 @@ def main():
             st.rerun()
     
     with col2:
-        # 체크박스 상태 변경 시 플래그 설정
-        auto_refresh = st.checkbox("⚡ 자동 새로고침", value=st.session_state.auto_refresh, key="auto_refresh_cb")
-        if auto_refresh != st.session_state.auto_refresh:
-            st.session_state.auto_refresh = auto_refresh
-            st.session_state.user_interaction = True
-    
-    with col3:
-        # 드롭다운 변경 시 플래그 설정
-        refresh_interval = st.selectbox(
-            "새로고침 간격",
-            options=[3, 5, 10, 30],
-            index=[3, 5, 10, 30].index(st.session_state.refresh_interval) if st.session_state.refresh_interval in [3, 5, 10, 30] else 1,
-            format_func=lambda x: f"{x}초",
-            key="refresh_interval_select"
-        )
-        if refresh_interval != st.session_state.refresh_interval:
-            st.session_state.refresh_interval = refresh_interval
-            st.session_state.user_interaction = True
-    
-    with col4:
         if st.button("🏠 메인으로", use_container_width=True):
             st.session_state.page = "main"
             st.rerun()
     
-    # 현재 데이터 가져오기 (수동 새로고침 또는 자동 새로고침이 활성화된 경우에만)
+    # 현재 데이터 가져오기 (수동 새로고침 시에만)
     current_data = None
-    should_fetch_data = (st.session_state.manual_refresh_clicked or 
-                        (st.session_state.auto_refresh and 
-                         not st.session_state.user_interaction and 
-                         not st.session_state.pump_control_in_progress))
+    should_fetch_data = st.session_state.manual_refresh_clicked
     
     if should_fetch_data and arduino_comm.is_connected():
         # 새로운 데이터 가져오기
@@ -683,25 +651,7 @@ def main():
         else:
             st.info("히스토리 데이터가 부족합니다.")
     
-    # 자동 새로고침 (활성화된 경우에만)
-    if (st.session_state.auto_refresh and 
-        not st.session_state.user_interaction and 
-        not st.session_state.pump_control_in_progress and
-        arduino_comm.is_connected()):
-        
-        current_time = time.time()
-        if current_time - st.session_state.last_auto_refresh >= st.session_state.refresh_interval:
-            st.session_state.last_auto_refresh = current_time
-            # 자동 새로고침을 위한 플래그 설정 (수동 새로고침과 구분)
-            st.session_state.manual_refresh_clicked = True
-            time.sleep(0.1)  # 매우 짧은 지연
-            st.rerun()
-    
-    # 사용자 인터랙션 플래그 리셋 (자동 새로고침이 활성화된 경우에만)
-    if st.session_state.user_interaction and st.session_state.auto_refresh:
-        # 사용자 인터랙션 후 일정 시간 대기 후 자동 새로고침 재개
-        if time.time() - st.session_state.last_auto_refresh >= 3:  # 3초 후 자동 새로고침 재개
-            st.session_state.user_interaction = False
+    # 자동 새로고침 기능 제거됨: 관련 로직 삭제
 
 if __name__ == "__main__":
     main()

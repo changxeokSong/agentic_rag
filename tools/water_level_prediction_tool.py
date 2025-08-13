@@ -158,25 +158,11 @@ class WaterLevelPredictionTool:
         return cleaned
     
     def _extract_data_from_context(self, kwargs):
-        """컨텍스트나 환경에서 수위 데이터 추출"""
-        # 시스템 컨텍스트에서 사용자 질문 가져오기
-        try:
-            # 전역 변수나 컨텍스트에서 현재 사용자 질문 가져오기
-            import threading
-            context = getattr(threading.current_thread(), 'context', None)
-            if context and hasattr(context, 'user_query'):
-                user_query = context.user_query
-            else:
-                # 다른 방법으로 사용자 질문 가져오기
-                user_query = kwargs.get('user_query') or kwargs.get('query') or kwargs.get('question')
-            
-            if user_query:
-                logger.info(f"사용자 질문에서 데이터 추출 시도: {user_query[:100]}...")
-                return self._parse_data_from_text(user_query)
-            
-        except Exception as e:
-            logger.debug(f"컨텍스트에서 데이터 추출 실패: {e}")
-        
+        """컨텍스트나 환경에서 수위 데이터 추출 (간소화)"""
+        user_query = kwargs.get('user_query') or kwargs.get('query') or kwargs.get('question')
+        if user_query:
+            logger.info(f"사용자 질문에서 데이터 추출 시도: {user_query[:100]}...")
+            return self._parse_data_from_text(user_query)
         return None
     
     def _parse_data_from_text(self, text):
@@ -221,83 +207,22 @@ class WaterLevelPredictionTool:
         logger.warning("텍스트에서 유효한 수위 데이터를 찾을 수 없습니다")
         return None
     
-    def get_current_water_level(self):
-        """현재 수위 센서 값 반환 (시뮬레이션)"""
-        import random
-        import time
-        
-        # 수위 변화 시뮬레이션 (자연스러운 변화)
-        change = random.uniform(-2.0, 1.0)  # 수위는 보통 감소하는 경향
-        self.current_water_level += change
-        
-        # 수위 범위 제한 (0~100%)
-        if self.current_water_level < 0:
-            self.current_water_level = 0
-        elif self.current_water_level > 100:
-            self.current_water_level = 100
-            
-        return round(self.current_water_level, 1)
-    
-    def execute(self, action="READ_SENSOR", water_levels=None, dataPoints=None, data=None, prediction_steps=None, prediction_hours=None, time_horizon=None, **kwargs):
-        """수위 센서 및 예측 실행
-        
-        Args:
-            action: 실행할 동작 ("READ_SENSOR": 현재 수위 읽기, "PREDICT": 미래 수위 예측)
-            water_levels: 과거 수위 데이터 리스트 (시계열 순서)
-            dataPoints: water_levels의 별칭
-            data: water_levels의 별칭
-            prediction_steps: 예측할 미래 시점 개수 (기본값: 1)
-            prediction_hours: 시간 기반 예측 설정
-            time_horizon: 시간 범위 설정 (minutes, hours 등)
-        
-        Returns:
-            센서 값 또는 예측 결과 딕셔너리
+    def execute(self, water_levels=None, dataPoints=None, data=None, prediction_steps=None, prediction_hours=None, time_horizon=None, **kwargs):
+        """수위 예측 실행 래퍼 (간소화)
+
+        - 지원 인자 별칭:
+          - water_levels ≡ dataPoints ≡ data
+          - prediction_steps ≡ futureTimeSteps ≡ steps
         """
-        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if action == "READ_SENSOR":
-            # 현재 수위 센서 값 반환
-            current_level = self.get_current_water_level()
-            return {
-                "success": True,
-                "current_water_level": current_level,
-                "unit": "percent",
-                "timestamp": current_time,
-                "sensor_status": "active",
-                "message": f"현재 수위: {current_level}%"
-            }
-        
-        elif action == "PREDICT":
-            # 기존 예측 로직 실행
-            return self._predict_water_level(water_levels, dataPoints, data, prediction_steps, prediction_hours, time_horizon, **kwargs)
-        
-        else:
-            return {
-                "success": False,
-                "error": f"지원하지 않는 액션입니다: {action}. READ_SENSOR 또는 PREDICT를 사용하세요.",
-                "timestamp": current_time
-            }
+        # 별칭 매핑 처리
+        if prediction_steps is None:
+            alias_steps = kwargs.get('futureTimeSteps') or kwargs.get('steps') or kwargs.get('n_steps')
+            if isinstance(alias_steps, (int, float)):
+                prediction_steps = int(alias_steps)
+
+        return self._predict_water_level(water_levels, dataPoints, data, prediction_steps, prediction_hours, time_horizon, **kwargs)
     
-    def get_tool_config(self):
-        """도구 설정 반환"""
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["READ_sensor", "READ", "get_level", "current"],
-                            "description": "수위 센서 액션 (현재 수위 읽기)"
-                        }
-                    },
-                    "required": []
-                }
-            }
-        }
+    # 불필요한 도구 설정 스키마는 제거하여 단순화
     
     def _predict_water_level(self, water_levels=None, dataPoints=None, data=None, prediction_steps=None, prediction_hours=None, time_horizon=None, **kwargs):
         """수위 예측 실행 (기존 로직)"""

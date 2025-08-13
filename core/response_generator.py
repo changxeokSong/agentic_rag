@@ -84,6 +84,8 @@ class ResponseGenerator:
                 for gid, gname in graph_infos:
                     response += f"\n- 생성된 그래프 파일명: {gname}\n  (graph_file_id: {gid})\n  프론트엔드에서 이 ID를 사용하여 그래프를 표시하거나 다운로드할 수 있습니다."
 
+            # 노출 중복을 피하기 위해 텍스트 응답에는 출처 섹션을 추가하지 않음 (UI에서만 표시)
+
             return response
         except Exception as e:
             logger.error(f"응답 생성 오류: {str(e)}")
