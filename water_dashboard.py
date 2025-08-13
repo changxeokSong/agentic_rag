@@ -285,11 +285,14 @@ def main():
     arduino_comm = st.session_state.direct_arduino
     
     # 연결 상태 표시
-    connection_status = "🔌 연결됨" if arduino_comm.is_connected() else "❌ 연결 안됨"
-    if arduino_comm.arduino_port == "SIMULATION":
+    if not arduino_comm.is_connected():
+        connection_status = "❌ 연결 안됨"
+    elif arduino_comm.arduino_port == "SIMULATION":
         connection_status = "🔄 시뮬레이션 모드"
     elif arduino_comm.arduino_port:
         connection_status = f"✅ 연결됨 ({arduino_comm.arduino_port})"
+    else:
+        connection_status = "🔌 연결됨"
     
     st.sidebar.markdown(f"**아두이노 상태:** {connection_status}")
     
@@ -430,7 +433,7 @@ def main():
             channel_levels = water_data.get("channel_levels", {})
             
             # 시뮬레이션 모드 표시
-            if water_data.get("simulation", False):
+            if arduino_comm.arduino_port == "SIMULATION" or water_data.get("simulation", False):
                 st.info("🔄 **시뮬레이션 모드** - 실제 센서 데이터가 아닙니다")
             
             # 수위 게이지들
@@ -460,7 +463,7 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # 상태 텍스트
-                    simulation_badge = " (시뮬레이션)" if water_data.get("simulation", False) else ""
+                    simulation_badge = " (시뮬레이션)" if (arduino_comm.arduino_port == "SIMULATION" or water_data.get("simulation", False)) else ""
                     st.markdown(f"""
                     <div style="text-align: center; padding: 10px; background: {status_color}20; 
                                 border-radius: 10px; border: 2px solid {status_color};">

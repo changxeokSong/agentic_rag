@@ -41,16 +41,31 @@ class ResponseGenerator:
         """도구 실행 결과와 원래 질의를 바탕으로 최종 응답 생성"""
         logger.info("최종 응답 생성")
         
-        # Arduino 도구의 상세 메시지가 있는지 확인
+        # Arduino 도구의 상세 메시지가 있는지 확인하고 조합
         detailed_messages = []
-        for tool_name, result in tool_results.items():
-            if tool_name == "arduino_water_sensor" and isinstance(result, dict):
-                if result.get("detailed_message"):
-                    detailed_messages.append(result["detailed_message"])
+        water_level_info = None
+        pump_control_info = None
         
-        # Arduino 상세 메시지가 있으면 직접 사용
-        if detailed_messages:
-            return "\n\n".join(detailed_messages)
+        for tool_name, result in tool_results.items():
+            if tool_name.startswith("arduino_water_sensor") and isinstance(result, dict):
+                if result.get("detailed_message"):
+                    # 수위 정보와 펌프 제어 정보를 구분
+                    if "수위 센서 측정 결과" in result["detailed_message"]:
+                        water_level_info = result["detailed_message"]
+                    elif "펌프" in result["detailed_message"] and ("켜짐" in result["detailed_message"] or "꺼짐" in result["detailed_message"]):
+                        pump_control_info = result["detailed_message"]
+                    else:
+                        detailed_messages.append(result["detailed_message"])
+        
+        # Arduino 상세 메시지가 있으면 직접 사용 (수위 정보 우선 표시)
+        if water_level_info or pump_control_info or detailed_messages:
+            response_parts = []
+            if water_level_info:
+                response_parts.append(water_level_info)
+            if pump_control_info:
+                response_parts.append(pump_control_info)
+            response_parts.extend(detailed_messages)
+            return "\n\n".join(response_parts)
         
         # 도구 결과 필터링 (대용량/불필요 필드 생략)
         filtered_results = filter_tool_results_for_llm(tool_results)

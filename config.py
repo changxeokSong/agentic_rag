@@ -4,7 +4,6 @@ import os
 import json
 from dotenv import load_dotenv
 from langchain_teddynote import logging
-import weave
 
 # .env 파일 로드
 load_dotenv()

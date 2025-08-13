@@ -440,4 +440,13 @@ class DirectArduinoComm:
         """연결 상태 확인"""
         if self.arduino_port == "SIMULATION":
             return True
-        return self.serial_connection and self.serial_connection.is_open
+        
+        # 실제 시리얼 연결 확인
+        if not self.serial_connection:
+            return False
+            
+        try:
+            return self.serial_connection.is_open
+        except Exception:
+            # 연결 객체가 손상된 경우
+            return False
