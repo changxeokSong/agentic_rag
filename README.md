@@ -2,11 +2,10 @@
 
 ## 📌 프로젝트 개요
 
-AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 고도로 통합된 지능형 챗봇 시스템입니다. 아두이노 하드웨어 제어, LSTM 딥러닝 예측, 웹 검색, 문서 관리 등 8가지 전문 도구를 하나의 대화형 인터페이스에서 제공하며, 복합 명령어를 자동으로 분석하여 멀티 도구를 동시 실행할 수 있습니다.
+AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 고도로 통합된 지능형 챗봇 시스템입니다. 아두이노 하드웨어 제어, LSTM 딥러닝 예측, 문서 관리 등 6가지 전문 도구를 하나의 대화형 인터페이스에서 제공하며, 복합 명령어를 자동으로 분석하여 멀티 도구를 동시 실행할 수 있습니다.
 
 ## ⚡ 주요 기능
 
-- **🔍 웹 검색**: Tavily API를 통한 실시간 웹 정보 검색
 - **🧮 계산기**: 안전한 수학 표현식 평가, 수학 함수 지원
 - **🌤️ 날씨 조회**: OpenWeatherMap API 기반 전 세계 실시간 날씨 정보
 - **💧 아두이노 수위센서**: USB 시리얼 통신을 통한 실시간 수위 센서 값 읽기 및 펌프 제어
@@ -37,27 +36,21 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 고도로 통합된 �
 
 ## 🔧 사용 가능한 도구
 
-### 1. 웹 검색 도구 (`WebSearchTool`)
-- Tavily API를 통한 실시간 웹 정보 검색
-- 최신 뉴스, 일반 상식, 트렌드 정보 제공
-- 기본 3개 결과 반환
-- **예시**: "최신 AI 트렌드 알려줘"
-
-### 2. 계산기 도구 (`CalculatorTool`)
+### 1. 계산기 도구 (`CalculatorTool`)
 - 안전한 수학 표현식 평가 (`_safe_eval`)
 - 수학 함수 지원 (sqrt, sin, cos, tan, log, pi, e)
 - 보안 검증으로 안전하지 않은 함수 호출 차단
 - 6자리 반올림 처리
 - **예시**: "sqrt(144) + sin(pi/2) 계산해줘"
 
-### 3. 날씨 도구 (`WeatherTool`)
+### 2. 날씨 도구 (`WeatherTool`)
 - OpenWeatherMap Current Weather API 연동
 - 온도, 습도, 기압, 풍속, 구름량, 강수량 등 상세 기상 데이터
 - 위도/경도, 국가, 타임존, 일출/일몰, 가시거리, 이슬점 정보
 - 모의 데이터 모드 지원
 - **예시**: "서울 날씨 상세히 알려줘"
 
-### 4. 벡터 검색 도구 (`VectorSearchTool`)
+### 3. 벡터 검색 도구 (`VectorSearchTool`)
 - PostgreSQL + pgvector 기반 의미 검색
 - OpenAI 임베딩 모델 사용
 - 파일 필터링 및 태그 필터링
@@ -65,12 +58,12 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 고도로 통합된 �
 - PDF, TXT, DOCX 문서 지원
 - **예시**: "업로드한 문서에서 AI 관련 내용 찾아줘"
 
-### 5. 파일 목록 도구 (`ListFilesTool`)
+### 4. 파일 목록 도구 (`ListFilesTool`)
 - PostgreSQL에 저장된 파일 목록 조회
 - 파일명, 크기, 업로드 날짜 정보 제공
 - **예시**: "업로드된 파일 목록 보여줘"
 
-### 6. 아두이노 수위센서 도구 (`ArduinoWaterSensorTool`)
+### 5. 아두이노 수위센서 도구 (`ArduinoWaterSensorTool`)
 - USB 시리얼 통신 (pyserial, 115200 baud)
 - 실시간 수위 센서 값 읽기
 - 2개 펌프 개별 제어 (pump1, pump2)
@@ -80,7 +73,7 @@ AgenticRAG는 LM Studio와 PostgreSQL을 기반으로 한 고도로 통합된 �
 - **지원 액션**: read_water_level, pump1_on/off, pump2_on/off, connect, status, test_communication
 - **예시**: "수위 센서 값 읽어줘", "펌프1 켜줘", "아두이노 연결 상태 확인해줘"
 
-### 7. LSTM 수위 예측 도구 (`WaterLevelPredictionTool`)
+### 6. LSTM 수위 예측 도구 (`WaterLevelPredictionTool`)
 - TensorFlow/Keras 기반 LSTM 딥러닝 모델
 - 학습된 모델 파일: `lstm_model/lstm_water_level_model.h5`
 - 60개 시계열 데이터 입력으로 미래 수위 예측
@@ -103,11 +96,10 @@ agentic_rag_good/
 │   └── tool_manager.py                # 8개 도구 동적 등록 및 실행 (ToolManager)
 ├── models/                            # LLM 클라이언트
 │   └── lm_studio.py                   # LM Studio API 클라이언트 (LMStudioClient)
-├── tools/                             # 8가지 전문 도구 구현
+├── tools/                             # 6가지 전문 도구 구현
 │   ├── arduino_water_sensor_tool.py   # 아두이노 수위센서 및 펌프제어
 │   ├── calculator_tool.py             # 수학 계산기
 │   ├── list_files_tool.py            # 파일 목록 조회
-│   ├── search_tool.py                 # 웹 검색
 │   ├── vector_search_tool.py          # 벡터 검색
 │   ├── water_level_prediction_tool.py # LSTM 수위 예측
 │   └── weather_tool.py                # 날씨 조회
@@ -228,9 +220,6 @@ streamlit run app.py
 
 #### 단일 도구 사용
 ```
-# 웹 검색
-"최신 AI 트렌드 검색해줘"
-"파이썬 머신러닝 최신 뉴스 찾아줘"
 
 # 계산기
 "sqrt(144) + sin(pi/2) 계산해줘"
@@ -292,7 +281,7 @@ Streamlit UI (결과 표시)
 
 1. **Orchestrator**: 전체 시스템 조율, 비동기/동기 처리 지원
 2. **QueryAnalyzer**: LLM 기반 도구 선택, JSON 파싱
-3. **ToolManager**: 8개 도구 동적 등록 및 병렬 실행
+3. **ToolManager**: 7개 도구 동적 등록 및 병렬 실행
 4. **ResponseGenerator**: 멀티 도구 결과 통합 및 자연어 응답 생성
 
 ## 🔒 보안 고려사항
@@ -332,18 +321,6 @@ Streamlit UI (결과 표시)
 - `.env` 파일의 API 키 확인
 - Tavily, OpenWeatherMap, OpenAI 계정 상태 및 사용량 확인
 
-## 📈 향후 계획
-
-- [ ] **IoT 확장**: 더 많은 센서 지원 (온도, 습도, pH, 유량계 등)
-- [ ] **실시간 대시보드**: 센서 데이터 실시간 모니터링 및 시각화
-- [ ] **딥러닝 모델 개선**: 더 정교한 수위 예측 모델 및 다변수 예측
-- [ ] **알림 시스템**: 임계값 기반 자동 알림 (이메일, SMS, 푸시)
-- [ ] **모바일 앱**: React Native 기반 모바일 제어 앱
-- [ ] **클라우드 연동**: AWS IoT Core, Azure IoT Hub 연동
-- [ ] **사용자 관리**: 멀티 사용자 인증 및 권한 관리
-- [ ] **REST API**: 외부 시스템 연동을 위한 API 제공
-- [ ] **다국어 지원**: 영어, 중국어, 일본어 지원
-- [ ] **성능 최적화**: 캐싱, 배치 처리, 로드 밸런싱
 
 ## 📄 라이선스
 
