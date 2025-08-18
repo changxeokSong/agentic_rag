@@ -26,8 +26,6 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "10"))
 
-# 외부 API 키
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 SEARCH_ENGINE_API_KEY = os.getenv("SEARCH_ENGINE_API_KEY", "")
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
@@ -48,7 +46,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
 # 활성화된 도구 확인
 # MongoDB 도구 추가
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,calculator_tool,weather_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
 
 # PostgreSQL configuration
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")
@@ -94,34 +92,6 @@ def get_available_functions():
                     }
                 },
                 "required": ["query"]
-            }
-        },
-        {
-            "name": "calculator_tool",
-            "description": "수학 계산, 단위 변환, 공식 계산 등 수치 연산이 필요할 때 사용합니다.\n예시: '123 * 45 계산해줘', '섭씨 30도를 화씨로 변환해줘', '삼각형 넓이 공식 계산해줘'",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expression": {
-                        "type": "string",
-                        "description": "계산할 수학 표현식"
-                    }
-                },
-                "required": ["expression"]
-            }
-        },
-        {
-            "name": "weather_tool",
-            "description": "특정 도시나 지역의 현재 날씨 정보를 알려줍니다.\n예시: '서울 날씨 알려줘', '부산의 오늘 기온 알려줘'",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "날씨를 확인할 위치(도시 이름)"
-                    }
-                },
-                "required": ["location"]
             }
         },
         # MongoDB 도구 정의 추가
@@ -269,58 +239,49 @@ def generate_function_selection_prompt():
 2. "고마워요" 또는 "잘했어"
    → []
 
-3. "1+1 계산해줘"
-   → [{"name": "calculator_tool", "arguments": {"expression": "1+1"}}]
-
-4. "서울 날씨 알려줘"
-   → [{"name": "weather_tool", "arguments": {"location": "서울"}}]
-
-5. "서울 날씨와 2+2 계산해줘"  
-   → [{"name": "weather_tool", "arguments": {"location": "서울"}}, {"name": "calculator_tool", "arguments": {"expression": "2+2"}}]
-
- 6. "업로드한 보고서에서 삼성의 자체 개발 AI 이름 찾아줘"
+3. "업로드한 보고서에서 삼성의 자체 개발 AI 이름 찾아줘"
     → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "mode": "auto", "top_k": 10}}]
 
- 6-1. "'내부 보고서.pdf'에서 삼성 자체 개발 AI 이름 찾아줘"
+4. "'내부 보고서.pdf'에서 삼성 자체 개발 AI 이름 찾아줘"
     → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "file_filter": "내부 보고서.pdf", "mode": "auto"}}]
 
- 6-2. "태그에 '삼성','AI'가 붙은 문서에서 자체 개발 AI 이름 찾아줘 (상위 5개)"
+5. "태그에 '삼성','AI'가 붙은 문서에서 자체 개발 AI 이름 찾아줘 (상위 5개)"
     → [{"name": "vector_search_tool", "arguments": {"query": "자체 개발 AI 이름", "tags_filter": ["삼성", "AI"], "top_k": 5, "mode": "auto"}}]
 
-7. "펌프1 켜줘" 또는 "아두이노 펌프1 켜줘"
+6. "펌프1 켜줘" 또는 "아두이노 펌프1 켜줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_on"}}]
 
-8. "펌프1 꺼줘" 또는 "아두이노 펌프1 꺼줘"
+7. "펌프1 꺼줘" 또는 "아두이노 펌프1 꺼줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_off"}}]
 
-9. "펌프2 켜줘" 또는 "아두이노 펌프2 켜줘"
+8. "펌프2 켜줘" 또는 "아두이노 펌프2 켜줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]
 
-10. "펌프2 꺼줘" 또는 "아두이노 펌프2 꺼줘"
+9. "펌프2 꺼줘" 또는 "아두이노 펌프2 꺼줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_off"}}]
 
-11. "[10.5, 11.2, 12.1] 데이터로 수위 예측해줘"
+10. "[10.5, 11.2, 12.1] 데이터로 수위 예측해줘"
    → [{"name": "water_level_prediction_tool", "arguments": {"water_levels": [10.5, 11.2, 12.1]}}]
 
-12. "현재 수위 알려줘" 또는 "수위 측정해줘" 또는 "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
+11. "현재 수위 알려줘" 또는 "수위 측정해줘" 또는 "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
 
-13. "COM4로 아두이노 연결해줘"
+12. "COM4로 아두이노 연결해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "connect", "port": "COM4"}}]
 
-14. "현재 펌프 상태 알려줘" 또는 "아두이노 펌프 상태 확인해줘"
+13. "현재 펌프 상태 알려줘" 또는 "아두이노 펌프 상태 확인해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]
 
-15. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘" 또는 "지금 수위 어떤지 알려줘"
+14. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘" 또는 "지금 수위 어떤지 알려줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
 
-16. "아두이노 통신 테스트해줘"
+15. "아두이노 통신 테스트해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "test_communication"}}]
 
-17. "채널 1 수위 알려줘" 또는 "센서 1번 수위 확인해줘"
+16. "채널 1 수위 알려줘" 또는 "센서 1번 수위 확인해줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 1}}]
 
-18. "채널 2 수위 측정해줘" 또는 "센서 2번 수위 읽어줘"
+17. "채널 2 수위 측정해줘" 또는 "센서 2번 수위 읽어줘"
    → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 2}}]
 
 """

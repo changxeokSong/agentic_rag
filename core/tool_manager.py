@@ -1,7 +1,5 @@
 # core/tool_manager.py
 
-from tools.calculator_tool import CalculatorTool
-from tools.weather_tool import WeatherTool
 from tools.list_files_tool import ListFilesTool
 from tools.vector_search_tool import VectorSearchTool
 from tools.water_level_prediction_tool import WaterLevelPredictionTool
@@ -24,13 +22,6 @@ class ToolManager:
         """환경변수 설정에 따라 활성화된 도구만 등록"""
         # 웹 검색 도구 제거됨
         
-        # 계산 도구
-        if "calculator_tool" in ENABLED_TOOLS:
-            self.tools["calculator_tool"] = CalculatorTool()
-        
-        # 날씨 도구
-        if "weather_tool" in ENABLED_TOOLS:
-            self.tools["weather_tool"] = WeatherTool()
 
         # 파일 목록 조회 도구 등록
         if "list_files_tool" in ENABLED_TOOLS:

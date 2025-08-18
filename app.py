@@ -1,4 +1,4 @@
-# app.py - Streamlit 앱 (환경변수 활용)
+# app.py - Streamlit 앱 (환경변수 활용 및 3단 레이아웃 적용)
 
 import streamlit as st
 import asyncio
@@ -6,6 +6,7 @@ import nest_asyncio
 import time
 import os
 import json
+from datetime import datetime
 from models.lm_studio import LMStudioClient
 # from retrieval.vector_store import VectorStore # VectorStore 임포트 제거
 from core.orchestrator import Orchestrator
@@ -24,16 +25,13 @@ nest_asyncio.apply()
 # 로거 설정
 logger = setup_logger(__name__)
 
-# 세션 상태 초기화
+# --- 세션 상태 초기화 ---
 if 'messages' not in st.session_state:
     st.session_state.messages = []
-
 if 'system_initialized' not in st.session_state:
     st.session_state.system_initialized = False
-
 if 'debug_info' not in st.session_state:
     st.session_state.debug_info = {}
-
 if 'config_info' not in st.session_state:
     st.session_state.config_info = print_config()
 if 'last_vector_items' not in st.session_state:
@@ -50,17 +48,11 @@ def initialize_system():
             # LM Studio 클라이언트 초기화
             lm_studio_client = LMStudioClient()
             
-            # 벡터 스토어 초기화 (vector_tool 도구가 활성화된 경우에만) 로직 제거
-            # vector_store = None
-            # if "vector_tool" in ENABLED_TOOLS:
-            #     vector_store = VectorStore()
-            
-            # 오케스트레이터 초기화 - vector_store 인자 제거
+            # 오케스트레이터 초기화
             orchestrator = Orchestrator(lm_studio_client)
             
             # 세션 상태에 저장
             st.session_state.lm_studio_client = lm_studio_client
-            # st.session_state.vector_store = vector_store # vector_store 저장 제거
             st.session_state.orchestrator = orchestrator
             st.session_state.system_initialized = True
             
@@ -81,7 +73,7 @@ def initialize_system():
                         arduino_tool = orchestrator.tool_manager.tools['arduino_water_sensor']
                         if arduino_tool._connect_to_arduino():
                             logger.info("아두이노 자동 연결 성공")
-                            st.success("🔌 아두이노 자동 연결 성공!")
+                            st.toast("🔌 아두이노 자동 연결 성공!", icon="✅")
                         else:
                             logger.warning("아두이노 자동 연결 실패")
                             st.warning("⚠️ 아두이노 자동 연결 실패 - USB 연결을 확인하세요")
@@ -115,6 +107,7 @@ def initialize_system():
             st.error(f"시스템 초기화 중 오류가 발생했습니다: {str(e)}")
             return False
 
+# --- (기존의 다른 함수들은 변경 없이 그대로 유지) ---
 async def process_query_async(query):
     """질의를 비동기적으로 처리"""
     orchestrator = st.session_state.orchestrator
@@ -135,69 +128,6 @@ async def process_query_async(query):
     except Exception as e:
         logger.error(f"질의 처리 오류: {str(e)}")
         return f"질의 처리 중 오류가 발생했습니다: {str(e)}"
-
-def upload_and_index_files():
-    st.subheader("문서 업로드 및 색인")
-    uploaded_files = st.file_uploader("문서를 업로드하세요 (txt, pdf)", type=["txt", "pdf"], accept_multiple_files=True)
-    if uploaded_files and st.session_state.system_initialized:
-        docs = []
-        for file in uploaded_files:
-            file_path = f"/tmp/{file.name}"
-            with open(file_path, "wb") as f:
-                f.write(file.getbuffer())
-            if file.name.lower().endswith(".txt"):
-                loaded = DocumentLoader.load_text(file_path)
-            elif file.name.lower().endswith(".pdf"):
-                loaded = DocumentLoader.load_pdf(file_path)
-            else:
-                loaded = []
-            docs.extend(loaded)
-        # 벡터 스토어에 추가
-        vector_store = st.session_state.vector_store
-        if vector_store:
-            vector_store.add_texts([doc.page_content for doc in docs], "user_uploads")
-            st.success(f"{len(docs)}개 문서가 색인되었습니다.")
-        else:
-            st.error("벡터 스토어가 초기화되지 않았습니다.")
-
-def display_graph_image(graph_file_id):
-    """PostgreSQL에서 그래프 이미지를 가져와 표시"""
-    storage = st.session_state.get('storage')
-    if not storage:
-        st.error("스토리지 시스템이 초기화되지 않았습니다.")
-        return
-
-    try:
-        # 파일 내용을 바이트로 가져옴
-        image_content = storage.get_file_content_by_id(graph_file_id)
-
-        if image_content:
-            # 파일 확장자를 확인하여 이미지 타입 결정 (예: png)
-            # 실제 파일 이름이나 메타데이터에서 확장자를 가져오는 것이 더 정확할 수 있습니다.
-            # 여기서는 임시로 png로 가정하거나, get_file_content_by_id가 파일 정보를 더 반환하도록 수정
-            # (현재는 content만 반환하므로, 파일 정보를 조회하는 추가 호출이 필요할 수 있음) -> save_file에서 metadata에 확장자 저장 고려
-            # get_file_content_by_id를 확장하여 파일 이름/메타데이터도 함께 가져오도록 수정하는 것이 좋음.
-
-            # 만약 get_file_content_by_id가 content만 반환한다면,
-            # 파일 ID로 파일 정보를 별도 조회하여 filename이나 확장자를 얻어야 함.
-            # 현재는 content만 가져오므로, Streamlit에서 이미지 타입 추론이 필요.
-            # Streamlit의 st.image는 bytes를 받을 때 type을 지정할 수 있습니다.
-            # 가장 흔한 그래프 이미지 형식인 png로 가정하고 시도.
-
-            # 파일 내용을 Base64로 인코딩 (Streamlit st.image는 bytes도 직접 받음)
-            # base64_image = base64.b64encode(image_content).decode()
-            # image_tag = f'<img src="data:image/png;base64,{base64_image}" alt="Graph Image" style="max-width:100%;">'
-            # st.markdown(image_tag, unsafe_allow_html=True)
-
-            # 또는 Streamlit의 st.image 사용
-            st.image(bytes(image_content), caption='생성된 그래프', use_container_width=True, output_format='auto')
-
-        else:
-            st.warning(f"그래프 이미지 ID {graph_file_id}에 해당하는 파일 내용을 가져올 수 없습니다.")
-
-    except Exception as e:
-        logger.error(f"그래프 이미지 표시 오류: {graph_file_id} - {e}")
-        st.error(f"그래프 이미지를 가져오는 중 오류가 발생했습니다: {e}")
 
 def display_pdf_inline(file_bytes: bytes, filename: str):
     """PDF 바이트를 인라인으로 렌더링"""
@@ -228,7 +158,6 @@ def render_pdf_modal():
         st.session_state.show_pdf_modal = False
         return
     file_bytes = storage.get_file_content_by_id(file_id)
-    # Modal API가 없을 수 있으므로 공통 fallback(expander) 사용
     with st.expander(f"📄 {filename} (미리보기)", expanded=True):
         if file_bytes:
             display_pdf_inline(bytes(file_bytes), filename)
@@ -243,15 +172,13 @@ def main():
     st.set_page_config(
         page_title="Synergy ChatBot",
         page_icon="⚡",
-        layout="wide",
-        initial_sidebar_state="expanded"
+        layout="wide"
     )
-    
+
     # 페이지 라우팅
     if 'page' not in st.session_state:
         st.session_state.page = "main"
-    
-    # 대시보드 페이지로 이동
+
     if st.session_state.page == "water_dashboard":
         try:
             from water_dashboard import main as dashboard_main
@@ -259,668 +186,634 @@ def main():
             return
         except ImportError as e:
             st.error(f"대시보드 모듈 로드 실패: {e}")
-            st.error("필요한 패키지를 설치하세요: pip install plotly")
-            st.session_state.page = "main"  # 메인 페이지로 돌아가기
-    
-    # 메인 페이지 계속 실행
+            st.session_state.page = "main"
+            
     st.session_state.page = "main"
 
-    # 전역 모달 렌더링 훅 (세션 state에 따라 표시)
     render_pdf_modal()
     
-    # 다크 모드 호환 CSS 추가
+
+    # --- 카카오톡 스타일 CSS ---
     st.markdown("""
     <style>
-    :root {
-        --text-color: #1f2937;
-        --text-color-secondary: #6b7280;
-        --bg-color: #ffffff;
-        --border-color: #e5e7eb;
+    :root{
+        --kakao-bg: #b5b2ff;
+        --kakao-yellow: #fee500;
+        --user-bubble: #fee500;
+        --ai-bubble: #ffffff;
+        --text-dark: #191919;
+        --text-light: #666666;
+        --bubble-shadow: rgba(0,0,0,0.1);
+        --border-light: #e1e1e1;
     }
     
-    [data-theme="dark"] {
-        --text-color: #f9fafb;
-        --text-color-secondary: #d1d5db;
-        --bg-color: #111827;
-        --border-color: #374151;
+    .main .block-container {
+        padding: 0.5rem 1rem;
+        max-width: 1400px;
     }
     
-    .stApp[data-theme="dark"] {
-        --text-color: #f9fafb !important;
-        --text-color-secondary: #d1d5db !important;
+    /* 채팅 컨테이너 배경 */
+    .stChatMessage {
+        background: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        margin: 12px 0 !important;
+        padding: 0 !important;
+        position: relative !important;
     }
     
-    /* 다크 모드에서 텍스트 색상 강제 적용 */
-    .stApp[data-theme="dark"] .markdown-text-container {
-        color: #f9fafb !important;
+    /* 사용자 메시지 - 카카오톡 노란색 말풍선 (오른쪽) */
+    .stChatMessage[data-testid="chat-message-user"] {
+        display: flex !important;
+        justify-content: flex-end !important;
+        margin-bottom: 8px !important;
     }
     
-    .stApp[data-theme="dark"] p, 
-    .stApp[data-theme="dark"] span,
-    .stApp[data-theme="dark"] div {
-        color: #f9fafb !important;
+    .stChatMessage[data-testid="chat-message-user"] .stMarkdown {
+        background: var(--user-bubble) !important;
+        color: var(--text-dark) !important;
+        padding: 12px 16px !important;
+        border-radius: 18px 4px 18px 18px !important;
+        max-width: 70% !important;
+        box-shadow: 0 2px 8px var(--bubble-shadow) !important;
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+        margin: 0 !important;
+        position: relative !important;
+        word-break: break-word !important;
     }
     
-    /* 사이드바 다크 모드 개선 */
-    .stApp[data-theme="dark"] .css-1d391kg {
-        background-color: #1f2937 !important;
+    /* AI 메시지 - 흰색 말풍선 (왼쪽) */
+    .stChatMessage[data-testid="chat-message-assistant"] {
+        display: flex !important;
+        justify-content: flex-start !important;
+        margin-bottom: 8px !important;
+        align-items: flex-start !important;
     }
     
-    /* 버튼 스타일 개선 */
-    .stButton > button {
+    .stChatMessage[data-testid="chat-message-assistant"]::before {
+        content: "🤖";
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px !important;
+        font-size: 18px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stChatMessage[data-testid="chat-message-assistant"] .stMarkdown {
+        background: var(--ai-bubble) !important;
+        color: var(--text-dark) !important;
+        padding: 12px 16px !important;
+        border-radius: 4px 18px 18px 18px !important;
+        max-width: 70% !important;
+        box-shadow: 0 2px 8px var(--bubble-shadow) !important;
+        border: 1px solid var(--border-light) !important;
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+        margin: 0 !important;
+        position: relative !important;
+        word-break: break-word !important;
+    }
+    
+    /* 생각 중 메시지 스타일 - 채팅창 내에서만 적용 */
+    .thinking-bubble {
+        background: #f5f5f5 !important;
+        border: 2px dashed #667eea !important;
+        animation: thinking-pulse 2s ease-in-out infinite !important;
+        position: relative !important;
+        z-index: 1 !important;
+    }
+    
+    /* 전체 화면 오버레이 방지 */
+    .stApp > div[data-testid="stAppViewContainer"] {
+        background: transparent !important;
+    }
+    
+    /* streamlit 기본 스피너/로더 숨기기 */
+    .stSpinner {
+        display: none !important;
+    }
+    
+    /* 전체 화면 블록킹 방지 */
+    body {
+        overflow: visible !important;
+    }
+    
+    @keyframes thinking-pulse {
+        0%, 100% { opacity: 0.8; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.05); }
+    }
+    
+    @keyframes thinking-glow {
+        0%, 100% { 
+            box-shadow: 0 4px 12px rgba(44, 90, 160, 0.2);
+            border-color: #667eea;
+        }
+        50% { 
+            box-shadow: 0 6px 20px rgba(44, 90, 160, 0.4);
+            border-color: #4f5bd5;
+        }
+    }
+    
+    @keyframes thinking-dots {
+        0%, 20% { opacity: 0.3; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
+        80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    }
+    
+    /* 타임스탬프 스타일 */
+    .timestamp {
+        font-size: 11px !important;
+        color: var(--text-light) !important;
+        margin-top: 4px !important;
+        text-align: right !important;
+    }
+    
+    .timestamp-left {
+        text-align: left !important;
+        margin-left: 48px !important;
+    }
+    
+    /* --- 🎨 채팅 입력창 스타일 (강제 라이트 모드) --- */
+    /* 입력창 내부 텍스트 스타일 */
+    .stChatInput > div > div > textarea {
+        border: none !important; /* 이 부분이 textarea의 테두리를 제거합니다 */
+        border-radius: 24px !important;
+        padding: 12px 20px !important;
+        font-size: 14px !important;
+        background: transparent !important;
+        resize: none !important;
+        color: #191919 !important; 
+    }
+
+    /* 입력창 내부 텍스트 스타일 */
+    .stChatInput > div > div > textarea {
+        border: none !important;
+        border-radius: 24px !important;
+        padding: 12px 20px !important;
+        font-size: 14px !important;
+        background: transparent !important;
+        resize: none !important;
+        color: #191919 !important; /* 텍스트 색상 고정 */
+    }
+
+    /* 입력창 플레이스홀더 텍스트 색상 */
+    .stChatInput > div > div > textarea::placeholder {
+        color: #888888 !important;
+    }
+
+    .stChatInput > div > div > textarea:focus {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    
+    /* 파일 아이템 스타일 */
+    .file-item{
+        border: 1px solid var(--border-light);
         border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        transition: all 0.3s ease;
+        padding: 8px;
+        margin: 6px 0;
+        background: white;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    .file-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* 컨테이너 간격 최적화 */
+    .stContainer > div {
+        gap: 0.5rem !important;
+    }
+
+    /* 다크 모드 */
+    [data-theme="dark"] {
+        --ai-bubble: #2f2f2f;
+        --user-bubble: #4a4a4a;
+        --text-dark: #ffffff;
+        --text-light: #b0b0b0;
+        --border-light: #444444;
+        --bubble-shadow: rgba(0,0,0,0.3);
+    }
+    
+    /* 다크 모드 오버라이드 방지 (기존 다크모드 CSS는 삭제) */
+    [data-theme="dark"] .stChatInput > div > div {
+        background: #ffffff !important; /* 다크모드에서도 흰색 배경 유지 */
+        border-color: #e1e1e1 !important;
+    }
+    [data-theme="dark"] .stChatInput > div > div > textarea {
+        color: #191919 !important; /* 다크모드에서도 검은 텍스트 유지 */
+    }
+    [data-theme="dark"] .stChatInput > div > div > textarea::placeholder {
+        color: #888888 !important; /* 다크모드에서도 플레이스홀더 색상 유지 */
+    }
+    
+    [data-theme="dark"] .file-item {
+        background: #2f2f2f;
+        border-color: #444444;
+        color: #ffffff;
     }
     </style>
     """, unsafe_allow_html=True)
-    
-    # 메인 헤더 (다크 모드 호환)
+
+    # --- 헤더 (전체 화면 폭에 맞게 수정) ---
     st.markdown("""
-    <div style="text-align: center; padding: 2rem 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; margin-bottom: 2rem; color: white; box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);">
-        <h1 style="margin: 0; font-size: 2.5em; font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); color: white !important;">⚡ Synergy ChatBot</h1>
-        <p style="margin: 0.5rem 0 0 0; font-size: 1.2em; opacity: 0.9; color: white !important;">AI-Powered Intelligent Assistant</p>
+    <div style="text-align:center; padding:24px 16px; border-radius:16px; width: 100%; margin: 16px 0; color:#fff; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow:0 6px 24px rgba(102,126,234,.3); position: relative; overflow: hidden;">
+        <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at 20% 80%, rgba(255,255,255,0.1) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255,255,255,0.1) 0%, transparent 50%);"></div>
+        <div style="position: relative; z-index: 1;">
+            <h1 style="margin:0; font-size:32px; color:white; font-weight:700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">⚡Synergy ChatBot</h1>
+            <p style="margin:8px 0 0; opacity:.95; color:white; font-size:16px; font-weight:400;">AI-Powered Intelligent Assistant</p>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # 사이드바
-    with st.sidebar:
-        st.markdown("""
-        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 1rem; color: white;">
-            <h3 style="margin: 0; font-weight: 600; color: white !important;">🎛️ 시스템 제어</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 초기화 버튼
-        if st.button("🔄 시스템 초기화", type="primary", use_container_width=True):
-            if initialize_system():
-                pass # 초기화 성공 메시지 제거
-            else:
-                st.error("시스템 초기화에 실패했습니다.")
-        
-        # 대시보드 버튼 및 아두이노 상태
-        if st.session_state.get('system_initialized', False):
+    # --- 3단 레이아웃 정의 (비율 조정) ---
+    left_col, center_col, right_col = st.columns([0.8, 2.4, 1])
+
+    # --- 왼쪽 컬럼: 제어판 ---
+    with left_col:
+        is_system_initialized = st.session_state.get('system_initialized', False)
+
+        with st.container(border=True):
+            st.subheader("🎛️ 시스템 제어")
+            if st.button("🔄 시스템 초기화", type="primary", use_container_width=True):
+                if initialize_system():
+                    st.toast("시스템 초기화 성공!", icon="🎉")
+                    st.rerun()
+                else:
+                    st.error("시스템 초기화에 실패했습니다.")
             
-            if st.button("💧 수위 대시보드", type="secondary", use_container_width=True):
-                # Streamlit multipage navigation using session state
+            if st.button("💧 수위 대시보드", use_container_width=True, disabled=not is_system_initialized):
                 st.session_state.page = "water_dashboard"
                 st.rerun()
-        
-        # 시스템 상태
-        st.markdown("#### 📊 시스템 상태")
-        if 'system_initialized' not in st.session_state or not st.session_state.system_initialized:
-            st.markdown("""
-            <div style='padding: 12px; background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%); 
-                        border-left: 4px solid #f44336; border-radius: 8px; margin: 10px 0; 
-                        box-shadow: 0 2px 8px rgba(244, 67, 54, 0.2);'>
-                <strong style='color: #d32f2f;'>❌ 초기화 필요</strong>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div style='padding: 12px; background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c8 100%); 
-                        border-left: 4px solid #4caf50; border-radius: 8px; margin: 10px 0;
-                        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);'>
-                <strong style='color: #2e7d32;'>✅ 시스템 준비완료</strong>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 모델 정보 표시
-            if 'model_info' in st.session_state:
-                st.markdown("#### 🤖 모델 정보")
-                model_info = st.session_state.model_info
+
+            if is_system_initialized:
+                st.success("✅ 시스템 준비완료")
+            else:
+                st.error("❌ 초기화 필요")
+
+        with st.container(border=True):
+            st.subheader("🤖 모델 / 연결 상태")
+            if is_system_initialized:
+                model_info = st.session_state.get('model_info', {})
+                api_ok = model_info.get('api_available', False)
                 
-                # 아두이노 연결 상태 확인
+                # 아두이노 상태 로직 개선
                 arduino_status = "❌ 연결 안됨"
                 arduino_color = "#dc2626"
                 
-                if st.session_state.system_initialized and 'tool_info' in st.session_state:
-                    if 'arduino_water_sensor' in st.session_state.tool_info:
-                        try:
-                            # 아두이노 도구에서 상태 확인
-                            arduino_tool = st.session_state.orchestrator.tool_manager.tools.get('arduino_water_sensor')
-                            if arduino_tool and hasattr(arduino_tool, 'arduino_port'):
-                                if arduino_tool.arduino_port == "SIMULATION":
-                                    arduino_status = "🔄 시뮬레이션 모드"
-                                    arduino_color = "#f59e0b"
-                                elif arduino_tool.arduino_port and arduino_tool.arduino_port.startswith('/dev/tty'):
-                                    # usbipd-win으로 포워딩된 실제 포트
-                                    if (hasattr(arduino_tool, 'serial_connection') and 
-                                        arduino_tool.serial_connection and 
-                                        arduino_tool.serial_connection.is_open):
-                                        arduino_status = f"✅ 실제 연결됨 ({arduino_tool.arduino_port})"
-                                        arduino_color = "#16a34a"
-                                    else:
-                                        arduino_status = f"🔌 포트 발견 ({arduino_tool.arduino_port})"
-                                        arduino_color = "#3b82f6"
-                                elif arduino_tool.arduino_port:
-                                    # 기타 포트
-                                    arduino_status = f"✅ 연결됨 ({arduino_tool.arduino_port})"
-                                    arduino_color = "#16a34a"
-                        except Exception as e:
-                            logger.debug(f"아두이노 상태 확인 중 오류: {e}")
+                # 아두이노 도구 확인
+                arduino_tool = None
+                if (hasattr(st.session_state, 'orchestrator') and 
+                    hasattr(st.session_state.orchestrator, 'tool_manager') and
+                    st.session_state.orchestrator.tool_manager.tools):
+                    arduino_tool = st.session_state.orchestrator.tool_manager.tools.get('arduino_water_sensor')
                 
-                st.markdown(f"""
-                <div style='padding: 15px; background: linear-gradient(135deg, #f8f9ff 0%, #e8f4ff 100%); 
-                            border-radius: 10px; margin: 10px 0; border: 1px solid #e1e8ff;
-                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);'>
-                    <p style='margin: 5px 0; color: var(--text-color, #1f2937);'><strong>📝 모델:</strong> {model_info['model']}</p>
-                    <p style='margin: 5px 0; color: var(--text-color, #1f2937);'><strong>🔗 API 상태:</strong> {'<span style="color: #16a34a; font-weight: 600;">✅ 연결됨</span>' if model_info['api_available'] else '<span style="color: #dc2626; font-weight: 600;">❌ 연결 안됨</span>'}</p>
-                    <p style='margin: 5px 0; color: var(--text-color, #1f2937);'><strong>🔌 아두이노:</strong> <span style="color: {arduino_color}; font-weight: 600;">{arduino_status}</span></p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        # 환경 설정 표시
-        with st.expander("⚙️ 환경 설정", expanded=False):
-            if 'config_info' in st.session_state:
-                config_info = st.session_state.config_info
-                st.json(config_info)
-        
-        # 디버그 모드
-        st.markdown("---")
-        is_system_initialized = st.session_state.get('system_initialized', False)
-        debug_mode = st.checkbox("🐛 디버그 모드", value=DEBUG_MODE, disabled=not is_system_initialized)
+                if arduino_tool:
+                    # 포트 정보 확인
+                    port = getattr(arduino_tool, 'arduino_port', None)
+                    serial_conn = getattr(arduino_tool, 'serial_connection', None)
+                    
+                    if port == "SIMULATION":
+                        arduino_status = "🔄 시뮬레이션"
+                        arduino_color = "#f59e0b"
+                    elif port and serial_conn and hasattr(serial_conn, 'is_open') and serial_conn.is_open:
+                        # Windows COM 포트 처리
+                        port_name = port.split('\\')[-1] if '\\' in port else port.split('/')[-1]
+                        arduino_status = f"✅ 연결됨 ({port_name})"
+                        arduino_color = "#16a34a"
+                    elif port:
+                        port_name = port.split('\\')[-1] if '\\' in port else port.split('/')[-1]
+                        arduino_status = f"🔌 포트 발견 ({port_name})"
+                        arduino_color = "#3b82f6"
+                
+                st.markdown(f"**모델**: `{model_info.get('model', '-')}`")
+                st.markdown(f"**API**: {'<span style="color: #16a34a;">✅ 연결됨</span>' if api_ok else '<span style="color: #dc2626;">❌ 연결 안됨</span>'}", unsafe_allow_html=True)
+                st.markdown(f"**아두이노**: <span style='color: {arduino_color};'>{arduino_status}</span>", unsafe_allow_html=True)
 
-        if debug_mode:
-            st.markdown("""
-            <div style='padding: 10px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
-                        border-radius: 6px; margin: 8px 0; font-size: 0.9em;
-                        border: 1px solid #f1c40f; box-shadow: 0 2px 4px rgba(241, 196, 15, 0.2);'>
-                <span style='color: #856404; font-weight: 500;'>🔍 디버그 모드 활성화</span>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div style='padding: 10px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
-                        border-radius: 6px; margin: 8px 0; font-size: 0.9em;
-                        border: 1px solid #dee2e6; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);'>
-                <span style='color: var(--text-color-secondary, #6c757d); font-weight: 500;'>😴 디버그 모드 비활성화</span>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # 도구 정보 표시
-        if st.session_state.system_initialized and 'tool_info' in st.session_state:
-            st.markdown("#### 🛠️ 활성화된 도구")
-            tool_info = st.session_state.tool_info
-            
-            for info in tool_info.values():
-                tool_icon = {
-                    'calculator_tool': '🧮',
-                    'weather_tool': '🌤️',
-                    'list_files_tool': '📁',
-                    'vector_search_tool': '🔎',
-                    'arduino_water_sensor': '🔌',
-                    'water_level_prediction_tool': '📊'
-                }.get(info['name'], '🔧')
+            else:
+                st.info("시스템 초기화 후 표시됩니다.")
 
-                st.markdown(f"""
-                <div style='padding: 12px; background: linear-gradient(135deg, #f8f9ff 0%, #e8f4ff 100%); 
-                            border-radius: 8px; margin: 5px 0; border-left: 3px solid #667eea;
-                            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);'>
-                    <strong style='color: var(--text-color, #1f2937);'>{tool_icon} {info['name'].replace('_tool', '').title()}</strong><br>
-                    <small style='color: var(--text-color-secondary, #6b7280); opacity: 0.8;'>{info['description'][:80]}{'...' if len(info['description']) > 80 else ''}</small>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # 메인 영역
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        # 시스템 초기화 확인 (페이지 로드 시 자동 초기화 로직 제거)
-        # 초기화는 이제 사이드바의 버튼 클릭 시에만 수행됩니다.
-        # if not st.session_state.system_initialized:
-        #     if initialize_system():
-        #         pass
-        #     else:
-        #         st.error("시스템을 초기화할 수 없습니다. 사이드바에서 '시스템 초기화' 버튼을 클릭하세요.")
+        with st.container(border=True):
+            st.subheader("⚙️ 환경 설정")
+            with st.expander("열기"):
+                st.json(st.session_state.get('config_info', {}))
         
-        # 이전 메시지 표시
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-        
-        # 사용자 입력 처리
-        if prompt := st.chat_input("💬 질문을 입력하세요... (예: '펌프 켜줘', '서울 날씨 알려줘')", key="main_chat_input"):
-            # 사용자 메시지 추가
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            # 응답 생성
-            with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                with st.spinner("처리 중..."):
-                    if st.session_state.system_initialized:
-                        # 비동기 처리 실행 -> 동기 래퍼 사용
-                        # 오케스트레이터 호출 및 전체 결과 받기
-                        orchestrator_result = st.session_state.orchestrator.process_query_sync(prompt) # 동기 래퍼 호출
+        with st.container(border=True):
+            st.subheader("🐛 디버그")
+            debug_mode = st.checkbox("디버그 모드", value=DEBUG_MODE, disabled=not is_system_initialized)
+            if debug_mode and st.session_state.debug_info:
+                with st.expander("최근 처리 정보", expanded=False):
+                    st.json(st.session_state.debug_info)
 
-                        response_text = orchestrator_result.get("response", "응답 생성 실패")
-                        tool_results = orchestrator_result.get("tool_results", {})
-                        tool_calls = orchestrator_result.get("tool_calls", [])
-
-                        # 메인 응답 표시
-                        message_placeholder.markdown(response_text)
+    # --- 중앙 컬럼: 채팅 ---
+    with center_col:
+        # 채팅 메시지를 담을 컨테이너 (헤더 제거, 높이 최적화)
+        chat_container = st.container(height=650)
+        with chat_container:
+            for i, message in enumerate(st.session_state.messages):
+                # 카카오톡 스타일 메시지 표시
+                if message["role"] == "user":
+                    # 사용자 메시지 - 오른쪽 정렬 노란색 말풍선
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+                        <div style="background: #fee500; color: #191919; padding: 12px 16px; 
+                                    border-radius: 18px 4px 18px 18px; max-width: 70%; 
+                                    box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-size: 14px; 
+                                    line-height: 1.4; word-break: break-word;">
+                            {message["content"]}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 타임스탬프 (오른쪽 정렬)
+                    if message.get("timestamp"):
+                        st.markdown(f"""
+                        <div style="text-align: right; font-size: 11px; color: #666666; margin-top: -4px; margin-bottom: 12px;">
+                            {message["timestamp"]}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                else:
+                    # AI 메시지 - 왼쪽 정렬 흰색 말풍선
+                    is_thinking = message.get("is_thinking", False)
+                    bubble_class = "thinking-bubble" if is_thinking else ""
+                    
+                    # 생각 중 메시지는 특별한 스타일
+                    if is_thinking:
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; 
+                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                        display: flex; align-items: center; justify-content: center; 
+                                        margin-right: 8px; font-size: 18px; flex-shrink: 0;
+                                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                                        animation: thinking-pulse 2s ease-in-out infinite;">
+                                🤖
+                            </div>
+                            <div class="{bubble_class}" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%); 
+                                        color: #2c5aa0; padding: 16px 20px; 
+                                        border-radius: 4px 18px 18px 18px; max-width: 70%; 
+                                        box-shadow: 0 4px 12px rgba(44, 90, 160, 0.2); 
+                                        border: 2px solid #667eea;
+                                        font-size: 15px; line-height: 1.5; word-break: break-word;
+                                        animation: thinking-glow 2s ease-in-out infinite;
+                                        position: relative; font-weight: 500;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 16px;">🧠</span>
+                                    <span>AI가 답변을 생성하고 있습니다</span>
+                                    <span style="animation: thinking-dots 1.5s infinite; font-size: 18px; color: #667eea;">⋯</span>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # 일반 AI 메시지
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; 
+                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                        display: flex; align-items: center; justify-content: center; 
+                                        margin-right: 8px; font-size: 18px; flex-shrink: 0;
+                                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                                🤖
+                            </div>
+                            <div style="background: white; color: #191919; padding: 12px 16px; 
+                                        border-radius: 4px 18px 18px 18px; max-width: 70%; 
+                                        box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #e1e1e1;
+                                        font-size: 14px; line-height: 1.5; word-break: break-word;">
+                                {message["content"]}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # 타임스탬프와 처리시간 (왼쪽 정렬, 프로필 이미지 만큼 들여쓰기)
+                    if not is_thinking:
+                        timestamp_parts = []
+                        if message.get("timestamp"):
+                            timestamp_parts.append(message["timestamp"])
+                        if message.get("processing_time"):
+                            timestamp_parts.append(f"⚡ {message['processing_time']}")
                         
-                        # 벡터 검색 출처 및 PDF 미리보기/다운로드 (메인 응답 바로 아래에 요약 표시)
-                        try:
-                            vector_items = []
-                            for k, v in tool_results.items():
-                                base_tool_name = k.split('_')[0] + '_' + k.split('_')[1] + '_tool' if '_' in k else k
-                                if base_tool_name == 'vector_search_tool' and isinstance(v, list):
-                                    vector_items.extend(v)
-
-                            if vector_items:
-                                # 파일 기준으로 모아 상위 5개 출처만 노출
-                                seen = set()
-                                unique_sources = []
-                                for item in vector_items:
-                                    fname = item.get('filename')
-                                    fid = item.get('file_id')
-                                    key = (fname, fid)
-                                    if key not in seen:
-                                        seen.add(key)
-                                        unique_sources.append(item)
-
-                                st.markdown("---")
-                                # 사용자 요청에 따라 상단 텍스트 출처 표시는 제거
-
-                                # 첫 번째 PDF 출처에 한해 빠른 미리보기/다운로드 제공
-                                storage = st.session_state.get('storage')
-                                for item in unique_sources:
-                                    fname = item.get('filename') or ''
-                                    fid = item.get('file_id')
-                                    if fname.lower().endswith('.pdf') and fid and storage:
-                                        btn_cols = st.columns(2)
-                                        with btn_cols[0]:
-                                            if st.button("👁️ 미리보기", key=f"src_quick_preview_{fid}", use_container_width=True):
-                                                open_pdf_modal(fid, fname)
-                                                st.rerun()
-                                        with btn_cols[1]:
-                                            try:
-                                                fb = storage.get_file_content_by_id(fid)
-                                                if fb:
-                                                    st.download_button(
-                                                        label="⬇️ 첫 번째 PDF 다운로드",
-                                                        data=bytes(fb),
-                                                        file_name=fname,
-                                                        mime='application/pdf',
-                                                        key=f"src_quick_download_{fid}",
-                                                        use_container_width=True,
-                                                        type="secondary"
-                                                    )
-                                                else:
-                                                    st.info("다운로드할 PDF 데이터를 찾을 수 없습니다.")
-                                            except Exception as e:
-                                                logger.error(f"PDF 다운로드 준비 오류: {fid} - {e}")
-                                                st.error("PDF 다운로드 준비 중 오류가 발생했습니다.")
-                                        break
-                        except Exception as e:
-                            logger.error(f"출처 요약 섹션 렌더링 오류: {e}")
-                        
-                        # 상세 정보가 있는 경우 접을 수 있는 형태로 표시 (중복 출처 표시 제거)
-                        if tool_results and len(tool_results) > 0:
-                            with st.expander("🔍 상세 실행 정보", expanded=False):
-                                for i, (tool_name, result) in enumerate(tool_results.items()):
-                                    # 도구 아이콘 매핑
-                                    tool_icon = {
-                                        'calculator_tool': '🧮', 
-                                        'weather_tool': '🌤️',
-                                        'list_files_tool': '📁',
-                                        'vector_search_tool': '🔎',
-                                        'arduino_water_sensor': '🔌',
-                                        'water_level_prediction_tool': '📊'
-                                    }
-                                    
-                                    # 도구 이름에서 숫자 제거하여 아이콘 찾기
-                                    base_tool_name = tool_name.split('_')[0] + '_' + tool_name.split('_')[1] + '_tool' if '_' in tool_name else tool_name
-                                    icon = tool_icon.get(base_tool_name, '🔧')
-                                    
-                                    st.markdown(f"### {icon} {tool_name.replace('_', ' ').title()}")
-                                    
-                                    # 결과를 예쁘게 포맷팅
+                        if timestamp_parts:
+                            st.markdown(f"""
+                            <div style="margin-left: 48px; font-size: 11px; color: #666666; margin-top: -4px; margin-bottom: 12px;">
+                                {" | ".join(timestamp_parts)}
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # 도구 실행 결과 (생각 중이 아닌 경우에만)
+                    if not is_thinking and "tool_results" in message:
+                        tool_results = message.get("tool_results", {})
+                        if tool_results:
+                            with st.expander("🔍 도구 실행 결과", expanded=False):
+                                for tool_name, result in tool_results.items():
+                                    st.subheader(f"🛠️ {tool_name}")
                                     if isinstance(result, dict):
-                                        # 중요한 정보만 하이라이트해서 표시
+                                        # 중요 정보만 하이라이트
                                         if 'success' in result:
-                                            status_color = "green" if result.get('success') else "red"
-                                            status_text = "✅ 성공" if result.get('success') else "❌ 실패"
-                                            st.markdown(f"**상태:** <span style='color: {status_color}'>{status_text}</span>", unsafe_allow_html=True)
-                                        
+                                            status = "✅ 성공" if result.get('success') else "❌ 실패"
+                                            st.markdown(f"**상태:** {status}")
                                         if 'message' in result:
                                             st.markdown(f"**결과:** {result['message']}")
-                                            
-                                        if 'result' in result:
-                                            st.markdown(f"**값:** `{result['result']}`")
-                                            
-                                        if 'expression' in result:
-                                            st.markdown(f"**계산식:** `{result['expression']}`")
-                                            
-                                        # 날씨 정보 특별 표시
                                         if 'temperature_c' in result:
-                                            st.markdown(f"**🌡️ 기온:** {result['temperature_c']}°C ({result.get('temperature_f', 'N/A')}°F)")
-                                            if 'weather_desc' in result:
-                                                st.markdown(f"**☁️ 날씨:** {result['weather_desc']}")
-                                            if 'humidity' in result:
-                                                st.markdown(f"**💧 습도:** {result['humidity']}%")
-                                            if 'wind_speed' in result:
-                                                st.markdown(f"**💨 풍속:** {result['wind_speed']} km/h")
-                                        
-                                        # 펌프 제어 결과 특별 표시
-                                        if 'pump_id' in result:
-                                            st.markdown(f"**🏷️ 펌프:** {result['pump_id']}")
-                                            if 'status' in result:
-                                                status_emoji = "🟢" if result['status'] == "ON" else "🔴"
-                                                st.markdown(f"**⚡ 상태:** {status_emoji} {result['status']}")
-                                        
-                                        # 검색 결과는 상단 출처 섹션에서 이미 요약 표시하므로 중복 표시 생략
-                                        
-                                        # 전체 JSON은 HTML details로 표시
-                                        import json as json_lib
-                                        json_str = json_lib.dumps(result, indent=2, ensure_ascii=False)
-                                        st.markdown(f"""
-                                        <details>
-                                        <summary>📋 전체 JSON 데이터</summary>
-                                        <pre style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto;">
-{json_str}
-                                        </pre>
-                                        </details>
-                                        """, unsafe_allow_html=True)
+                                            st.markdown(f"**🌡️ 기온:** {result['temperature_c']}°C")
+                                        if 'humidity' in result:
+                                            st.markdown(f"**💧 습도:** {result['humidity']}%")
+                                        # 전체 JSON은 접을 수 있게
+                                        with st.expander("전체 데이터", expanded=False):
+                                            st.json(result)
                                     else:
-                                            # 리스트 기반 결과 (예: 벡터 검색 결과) 전용 표시
-                                            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
-                                                st.markdown(f"**📊 검색 결과:** {len(result)}개 항목")
-                                                storage = st.session_state.get('storage')
-                                                for idx, item in enumerate(result):
-                                                    filename = item.get('filename') or '파일 이름 알 수 없음'
-                                                    file_id = item.get('file_id')
-                                                    chunk_index = item.get('chunk_index', 'N/A')
-                                                    score = item.get('score', 'N/A')
-                                                    content_preview = item.get('content', '')
-                                                    with st.container(border=True):
-                                                        st.markdown(f"**출처:** `{filename}`  |  **청크:** {chunk_index}  |  **점수:** {score}")
-                                                        st.markdown(content_preview)
-                                                        # PDF 미리보기/다운로드 버튼 (PDF 파일에 한함)
-                                                        if filename and filename.lower().endswith('.pdf') and file_id and storage:
-                                                            btn_cols = st.columns(2)
-                                                            with btn_cols[0]:
-                                                                if st.button("👁️ PDF 미리보기", key=f"preview_pdf_{tool_name}_{idx}_{file_id}", use_container_width=True):
-                                                                    try:
-                                                                        file_bytes = storage.get_file_content_by_id(file_id)
-                                                                        if file_bytes:
-                                                                            display_pdf_inline(bytes(file_bytes), filename)
-                                                                        else:
-                                                                            st.warning("PDF 데이터를 불러오지 못했습니다.")
-                                                                    except Exception as e:
-                                                                        logger.error(f"PDF 미리보기 오류: {file_id} - {e}")
-                                                                        st.error("PDF 미리보기에 실패했습니다.")
-                                                            with btn_cols[1]:
-                                                                try:
-                                                                    file_bytes = None
-                                                                    if storage:
-                                                                        file_bytes = storage.get_file_content_by_id(file_id)
-                                                                    if file_bytes:
-                                                                        st.download_button(
-                                                                            label="⬇️ PDF 다운로드",
-                                                                            data=bytes(file_bytes),
-                                                                            file_name=filename,
-                                                                            mime='application/pdf',
-                                                                            key=f"download_pdf_{tool_name}_{idx}_{file_id}",
-                                                                            use_container_width=True,
-                                                                            type="secondary"
-                                                                        )
-                                                                    else:
-                                                                        st.info("다운로드할 PDF 데이터를 찾을 수 없습니다.")
-                                                                except Exception as e:
-                                                                    logger.error(f"PDF 다운로드 준비 오류: {file_id} - {e}")
-                                                                    st.error("PDF 다운로드 준비 중 오류가 발생했습니다.")
-                                            else:
-                                                st.markdown(f"**결과:** {str(result)}")
-                                    
-                                    # 마지막 항목이 아니면 구분선 추가
-                                    if i < len(tool_results) - 1:
-                                        st.markdown("---")
-                        
-                        st.session_state.messages.append({"role": "assistant", "content": response_text})
+                                        st.write(str(result))
 
+        # 사용자 입력 (플레이스홀더 개선)
+        placeholder_text = "메시지를 입력하세요..."
+        if prompt := st.chat_input(placeholder_text, key="main_chat_input"):
+            if not is_system_initialized:
+                st.toast("⚠️ 먼저 '시스템 초기화'를 실행해주세요!", icon="🔄")
+            else:
+                # 사용자 메시지에 타임스탬프 추가
+                current_time = datetime.now().strftime("%H:%M")
+                user_message = {
+                    "role": "user", 
+                    "content": prompt,
+                    "timestamp": current_time
+                }
+                st.session_state.messages.append(user_message)
+                
+                # AI 생각 중 메시지 추가
+                thinking_message = {
+                    "role": "assistant",
+                    "content": "AI가 답변을 생성하고 있습니다...",
+                    "timestamp": datetime.now().strftime("%H:%M"),
+                    "is_thinking": True
+                }
+                st.session_state.messages.append(thinking_message)
+                
+                # 즉시 화면을 다시 그려서 thinking 메시지 표시
+                st.rerun()
+                
+        # thinking 메시지가 있을 때 백그라운드에서 처리
+        if (st.session_state.messages and 
+            st.session_state.messages[-1].get("is_thinking") and 
+            not st.session_state.get('processing_started', False)):
+            
+            # 처리 시작 플래그 설정 (중복 처리 방지)
+            st.session_state.processing_started = True
+            
+            # 사용자 질문 가져오기
+            user_prompt = st.session_state.messages[-2]["content"]
+            
+            try:
+                # 백그라운드에서 AI 응답 생성
+                start_time = time.time()
+                orchestrator_result = st.session_state.orchestrator.process_query_sync(user_prompt)
+                response_text = orchestrator_result.get("response", "응답 생성 실패")
+                processing_time = time.time() - start_time
+                
+                # thinking 메시지를 실제 응답으로 교체
+                st.session_state.messages[-1] = {
+                    "role": "assistant",
+                    "content": response_text,
+                    "tool_results": orchestrator_result.get("tool_results", {}),
+                    "timestamp": datetime.now().strftime("%H:%M"),
+                    "processing_time": f"{processing_time:.2f}초"
+                }
+                
+                # 디버그 정보 업데이트
+                st.session_state.debug_info = {
+                    "query": user_prompt,
+                    "tool_calls": orchestrator_result.get("tool_calls", []),
+                    "tool_results": orchestrator_result.get("tool_results", {}),
+                    "processing_time": f"{processing_time:.2f}초"
+                }
+                
+                # 처리 완료 플래그 제거
+                if 'processing_started' in st.session_state:
+                    del st.session_state.processing_started
+                
+                st.toast("✅ 응답 완료!", icon="🎉")
+                st.rerun()
+                
+            except Exception as e:
+                # 오류 발생 시 오류 메시지로 교체
+                st.session_state.messages[-1] = {
+                    "role": "assistant", 
+                    "content": f"❌ 오류가 발생했습니다: {str(e)}",
+                    "timestamp": datetime.now().strftime("%H:%M")
+                }
+                
+                if 'processing_started' in st.session_state:
+                    del st.session_state.processing_started
+                    
+                st.toast("❌ 오류 발생", icon="⚠️")
+                st.rerun()
 
+    # --- 오른쪽 컬럼: 파일 관리 ---
+    with right_col:
+        # 수위 그래프 및 실시간 상태
+        with st.container(border=True):
+            st.subheader("💧 수위 그래프")
+            if is_system_initialized:
+                # 간단한 수위 표시 (시뮬레이션 데이터)
+                st.markdown("""
+                <div style="background: linear-gradient(to top, #3b82f6 30%, #e5e7eb 30%); 
+                           height: 60px; border-radius: 8px; position: relative; margin: 8px 0;">
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                               color: white; font-weight: bold; font-size: 12px;">30%</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 실시간 상태 피드백
+                st.markdown("**실시간 상태 피드백**")
+                if 'shared_arduino' in st.session_state and st.session_state.shared_arduino:
+                    arduino = st.session_state.shared_arduino
+                    if hasattr(arduino, 'is_connected') and arduino.is_connected:
+                        st.success("✅ 데이터 수신 중", icon="📡")
                     else:
-                        error_msg = "시스템이 초기화되지 않았습니다. 사이드바에서 '시스템 초기화' 버튼을 클릭하세요."
-                        message_placeholder.error(error_msg)
-                        st.session_state.messages.append({"role": "assistant", "content": error_msg})
-    
-    with col2:
-        # 문서 업로드 및 색인 UI
-        # upload_and_index_files() # 기존 벡터 스토어 색인 기능 주석 처리 또는 제거
-
-        # --- 파일 업로드 (PostgreSQL GridFS) ---
-        # 시스템이 초기화된 경우에만 파일 업로드 섹션 표시
-        if st.session_state.get('system_initialized', False):
-            st.markdown("""
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
-                <h4 style="margin: 0; font-weight: 600; color: white !important;">📤 파일 업로드</h4>
-            </div>
-            """, unsafe_allow_html=True)
-            # 세션 상태에 처리된 파일 목록 저장을 위한 초기화
-            if 'processed_files' not in st.session_state:
-                st.session_state.processed_files = []
-
-            # 업로드 상태를 나타내는 세션 상태 변수 초기화
-            if 'is_uploading' not in st.session_state:
-                st.session_state.is_uploading = False
-
-            # 파일 업로더와 업로드 버튼의 disabled 상태를 제어
-            upload_disabled = not st.session_state.get('system_initialized', False) or st.session_state.is_uploading
-
-            # 파일 업로더 위젯에 고유한 키 부여 및 disabled 상태 설정
-            uploaded_file_postgres = st.file_uploader(
-                "PostgreSQL에 저장할 파일을 업로드하세요", 
-                type=None, 
-                accept_multiple_files=False, 
-                key="file_uploader_key",
-                disabled=upload_disabled # disabled 상태 적용
-            )
-
-            # 업로드 버튼 추가 - 파일이 선택되고 업로드 중이 아닐 때만 보이도록 합니다.
-            # 업로드 중에는 버튼을 비활성화합니다.
-            if uploaded_file_postgres is not None:
-                if st.button(
-                    "업로드", 
-                    key="upload_button",
-                    disabled=upload_disabled # disabled 상태 적용
-                ):
-                    # 업로드 시작 시 상태 변경
-                    st.session_state.is_uploading = True
-
-            # is_uploading 상태가 True이면 실제 업로드 로직 실행
-            if st.session_state.is_uploading and uploaded_file_postgres is not None:
-                filename = uploaded_file_postgres.name
-
-                # PostgreSQLStorage 싱글톤 인스턴스 가져오기
-                pg_storage = PostgreSQLStorage.get_instance()
-                if pg_storage is None:
-                    st.error("스토리지 시스템이 초기화되지 않았습니다.")
-                    st.session_state.is_uploading = False
-                    return
-
-                # 파일 데이터를 읽어서 PostgreSQL에 저장
-                file_data = uploaded_file_postgres.getvalue()
-                # content_type = uploaded_file_postgres.type # GridFS에 저장 시 필요할 수 있음
-
-                with st.spinner(f"{filename} 업로드 중..."):
-                    try:
-                        # save_file 메소드를 호출하고 결과를 확인
-                        # save_file 메소드는 GridFS 저장 후 벡터 컬렉션 저장까지 처리
-                        # save_file 메소드가 file_id를 반환하도록 수정했다면 여기서 사용 가능
-                        # mongo_storage.save_file(file_data, filename, metadata={"tags": ["업로드"]}) # 예시 메타데이터
-                        # save_file은 성공 시 file_id(str) 또는 None 반환
-                        save_result_id = pg_storage.save_file(file_data, filename, metadata={"tags": ["업로드"]}) # 결과
-
-                        if save_result_id:
-                            st.success(f"파일 '{filename}' 업로드 및 저장 완료. ID: {save_result_id}")
-                        else:
-                            st.error(f"파일 '{filename}' 업로드 및 저장 실패.")
-
-                        # 성공적으로 처리된 파일 정보를 세션 상태에 추가
-                        # save_file이 성공한 경우에만 추가하도록 변경
-                        # 파일이 이미 존재하는 경우 (save_result is None)에도 목록 갱신을 위해 추가하도록 변경
-                        if save_result_id:
-                            st.session_state.processed_files.append((filename, uploaded_file_postgres.size))
-                        
-                        # 업로드 완료 후 상태 변경
-                        st.session_state.is_uploading = False
-
-                    except Exception as e:
-                        logger.error(f"파일 업로드 중 오류 발생: {e}")
-                        st.error(f"파일 업로드 중 오류가 발생했습니다: {e}")
-                        
-                        # 오류 발생 시 상태 변경
-                        st.session_state.is_uploading = False
-
-        else:
-            # 시스템이 초기화되지 않은 경우 메시지 표시
-            st.info("시스템을 초기화 해주세요")
-
-        # PostgreSQL에 저장된 파일 목록 표시 (기존 도구 사용)
-        # 'list_postgresql_files_tool'이 활성화되어 있어야 합니다.
-        # 이 부분은 기존 PostgreSQL 도구를 사용하므로 수정하지 않습니다.
-        # 파일 목록을 세션 상태에 저장하여 중복 호출 방지
-
-        # 파일 목록 섹션 제목 표시
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 10px; margin: 15px 0; text-align: center; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
-            <h4 style="margin: 0; font-weight: 600; color: white !important;">📂 파일 목록</h4>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 시스템이 초기화된 경우에만 파일 목록을 불러오고 표시
-        if st.session_state.get('system_initialized', False):
-            if 'postgres_files' not in st.session_state or st.session_state.postgres_files is None:
-                 # PostgreSQLStorage 인스턴스 가져와서 list_files 호출
-                mongo_storage = PostgreSQLStorage.get_instance()
-                if mongo_storage is None:
-                    st.session_state.postgres_files = []
-                    st.warning("스토리지 시스템이 초기화되지 않았습니다.")
+                        st.warning("⏳ 상태 수집 대기...", icon="🔄")
                 else:
-                    try:
-                         st.session_state.postgres_files = mongo_storage.list_files()
-                         logger.info(f"PostgreSQL 파일 목록 세션 상태에 저장: {len(st.session_state.postgres_files)}개")
-                    except Exception as e:
-                         logger.error(f"PostgreSQL 파일 목록 조회 오류: {e}")
-                         st.session_state.postgres_files = [] # 오류 발생 시 빈 리스트
-                         st.warning("파일 목록을 가져오는 중 오류가 발생했습니다. PostgreSQL 연결 상태를 확인하세요.")
-
-            if st.session_state.postgres_files:
-                # 각 파일 정보와 다운로드 버튼을 표시
-                for file_info in st.session_state.postgres_files:
-                     filename = file_info.get('filename', '이름 없음')
-                     # 파일 크기 (바이트)를 MB 단위로 변환하여 표시
-                     file_size_bytes = file_info.get('length', 0)
-                     file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
-                     file_id = file_info.get('_id', 'ID 없음')
-
-                     # 각 파일 항목을 시각적으로 그룹화하여 간격 조정 및 구분
-                     with st.container(border=True):
-                         # 파일 이름과 크기 표시
-                         st.markdown(f"""
-                         <div style='padding: 12px; background: linear-gradient(135deg, #f8f9ff 0%, #e8f4ff 100%); 
-                                     border-radius: 8px; margin: 8px 0; border: 1px solid #e1e8ff;
-                                     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);'>
-                             <div style='display: flex; align-items: center; justify-content: space-between;'>
-                                 <div>
-                                     <strong style='color: var(--text-color, #1f2937); font-size: 1.1em;'>📄 {filename}</strong><br>
-                                     <small style='color: var(--text-color-secondary, #6b7280); font-weight: 500;'>크기: {file_size_mb} MB</small>
-                                 </div>
-                             </div>
-                         </div>
-                         """, unsafe_allow_html=True)
-
-                         # 다운로드 버튼 추가 (파일 정보 바로 아래에 배치)
-                         # file_id가 유효한 문자열 ID인지 확인
-                         if file_id != 'ID 없음':
-                              # PostgreSQLStorage 싱글톤 인스턴스 가져오기
-                              mongo_storage = PostgreSQLStorage.get_instance()
-                              if mongo_storage is None:
-                                  st.warning("스토리지 시스템이 초기화되지 않았습니다.")
-                                  continue
- 
-                              # 파일 내용 가져오기 (다운로드 버튼 클릭 시 실행)
-                              # 파일을 다운로드 버튼의 data 인자로 직접 전달하면 Streamlit이 처리
-                              # get_file_content_by_id 호출은 download_button이 실제로 렌더링될 때가 아닌,
-                              # 페이지가 로드될 때마다 발생하므로 주의해야 함.
-                              # 여기서는 단순화를 위해 get_file_content_by_id를 호출하는 로직 유지
-                              # 실제 앱에서는 다운로드 버튼 클릭 시 콜백 함수 등에서 파일 내용을 가져오는 것이 효율적
-                              file_content = mongo_storage.get_file_content_by_id(file_id)
-
-                              if file_content is not None:
-                                  # memoryview를 bytes로 변환하여 download_button에 전달
-                                  file_content_bytes = bytes(file_content)
-
-                                  st.download_button(
-                                      label="⬇️ 다운로드",
-                                      data=file_content_bytes,
-                                      file_name=filename,
-                                      mime='application/octet-stream',
-                                      key=f"download_{file_id}",
-                                      use_container_width=True,
-                                      type="secondary"
-                                  )
-                              else:
-                                  st.warning(f"'{filename}' 파일 내용을 가져오지 못했습니다 (ID: {file_id}).")
-                                  # 디버깅을 위해 로그에 기록하거나 터미널에 출력할 수 있습니다.
-                                  # print(f"DEBUG: Failed to get content for file ID: {file_id}") # 터미널 출력
-                         else:
-                             st.warning(f"'{filename}' 파일 ID가 유효하지 않습니다: {file_id}")
-
+                    st.info("⏳ 상태 수집 대기...", icon="🔄")
             else:
-                # 시스템 초기화는 되었지만 파일이 없는 경우
-                st.info("업로드된 파일이 없습니다.")
-        else:
-            # 시스템이 초기화되지 않은 경우 메시지 표시
-            st.info("시스템을 초기화 해주세요")
+                st.info("시스템 초기화 후 표시됩니다.")
 
-        # 디버그 정보 표시 (디버그 모드가 활성화된 경우에만)
-        if debug_mode and st.session_state.debug_info:
-            st.markdown("""
-            <div style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); padding: 15px; border-radius: 10px; margin: 20px 0; color: #2d3436; box-shadow: 0 4px 12px rgba(255, 234, 167, 0.4);">
-                <h3 style="margin: 0 0 10px 0; font-weight: 600; color: #2d3436 !important;">🔍 처리 정보</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            debug_info = st.session_state.debug_info
-            
-            st.subheader("사용자 질의")
-            st.write(debug_info.get("query", "N/A"))
-            
-            st.subheader("선택된 도구")
-            tool_call = debug_info.get("tool_calls", {})
-            if tool_call:
-                if isinstance(tool_call, list):
-                    for i, call in enumerate(tool_call, 1):
-                        st.write(f"도구 {i}: `{call.get('name', 'N/A')}`")
-                        st.write("인자:")
-                        st.json(call.get("arguments", {}))
-                elif isinstance(tool_call, dict):
-                    st.write(f"도구: `{tool_call.get('name', 'N/A')}`")
-                    st.write("인자:")
-                    st.json(tool_call.get("arguments", {}))
+        with st.container(border=True):
+            st.subheader("📤 파일 업로드")
+            if is_system_initialized:
+                uploaded_file = st.file_uploader("DB에 저장할 파일 선택", label_visibility="collapsed", disabled=not is_system_initialized)
+                if uploaded_file:
+                    if st.button("업로드"):
+                        with st.spinner(f"'{uploaded_file.name}' 업로드 중..."):
+                            storage = st.session_state.get('storage')
+                            if storage:
+                                file_data = uploaded_file.getvalue()
+                                file_id = storage.save_file(file_data, uploaded_file.name, metadata={"source": "streamlit_upload"})
+                                if file_id:
+                                    st.success(f"업로드 완료! (ID: {file_id})")
+                                    # 파일 목록 즉시 갱신을 위해 세션 상태 초기화
+                                    if 'postgres_files' in st.session_state:
+                                        del st.session_state['postgres_files']
+                                    st.rerun()
+                                else:
+                                    st.error("파일 업로드 실패.")
+                            else:
+                                st.error("스토리지 시스템이 초기화되지 않았습니다.")
             else:
-                st.write("선택된 도구 없음")
-            
-            st.subheader("도구 실행 결과")
-            tool_results = debug_info.get("tool_results", {})
-            for tool_name, result in tool_results.items():
-                st.write(f"도구: `{tool_name}`")
-                with st.expander("결과 보기"):
-                    st.write(result)
-            
-            st.subheader("처리 시간")
-            st.write(debug_info.get("processing_time", "N/A"))
+                st.info("시스템 초기화 후 파일 업로드가 가능합니다.")
+
+        with st.container(border=True):
+            st.subheader("📂 파일 목록")
+            if is_system_initialized:
+                # 세션 상태에 파일 목록 캐싱
+                if 'postgres_files' not in st.session_state:
+                    storage = st.session_state.get('storage')
+                    if storage:
+                        st.session_state.postgres_files = storage.list_files()
+                    else:
+                        st.session_state.postgres_files = []
+                
+                file_list = st.session_state.postgres_files
+                
+                if not file_list:
+                    st.write("업로드된 파일이 없습니다.")
+                else:
+                    for file_info in file_list:
+                        file_id = file_info.get('_id')
+                        with st.container(border=True):
+                            st.markdown(f"**📄 {file_info.get('filename', 'N/A')}**")
+                            size_mb = file_info.get('length', 0) / (1024*1024)
+                            st.caption(f"크기: {size_mb:.2f} MB")
+                            
+                            storage = st.session_state.get('storage')
+                            if storage and file_id:
+                                file_content = storage.get_file_content_by_id(file_id)
+                                if file_content:
+                                    st.download_button(
+                                        label="⬇️ 다운로드",
+                                        data=bytes(file_content),
+                                        file_name=file_info.get('filename'),
+                                        key=f"download_{file_id}",
+                                        use_container_width=True
+                                    )
+            else:
+                st.info("시스템 초기화 후 파일 목록이 표시됩니다.")
 
 
 if __name__ == "__main__":
+    # 초기 메시지 설정
+    if len(st.session_state.messages) == 0:
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "안녕하세요! 좌측의 **🔄 시스템 초기화**를 먼저 눌러주세요.",
+            "timestamp": datetime.now().strftime("%H:%M")
+        })
     main()
