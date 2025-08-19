@@ -283,18 +283,51 @@ def main():
     
     # 아두이노 연결 상태 확인 (시스템 초기화 불필요)
     arduino_comm = st.session_state.direct_arduino
+    is_arduino_connected = arduino_comm.is_connected()
     
-    # 연결 상태 표시
-    if not arduino_comm.is_connected():
+    # 연결 상태 표시 (실제 연결 상태만 기준)
+    if not is_arduino_connected:
         connection_status = "❌ 연결 안됨"
+        status_color = "#dc2626"
     elif arduino_comm.arduino_port == "SIMULATION":
         connection_status = "🔄 시뮬레이션 모드"
-    elif arduino_comm.arduino_port:
-        connection_status = f"✅ 연결됨 ({arduino_comm.arduino_port})"
+        status_color = "#f59e0b"
+    elif is_arduino_connected and arduino_comm.arduino_port:
+        # 실제 연결된 상태에서만 포트 이름 표시
+        port_name = arduino_comm.arduino_port
+        if "\\" in port_name:
+            port_name = port_name.split("\\")[-1]
+        elif "/" in port_name:
+            port_name = port_name.split("/")[-1]
+        connection_status = f"✅ 연결됨 ({port_name})"
+        status_color = "#16a34a"
     else:
-        connection_status = "🔌 연결됨"
+        connection_status = "❌ 연결 안됨"
+        status_color = "#dc2626"
     
-    st.sidebar.markdown(f"**아두이노 상태:** {connection_status}")
+    st.sidebar.markdown(f"""
+    <div style="padding: 12px; background: {status_color}15; border: 2px solid {status_color}; 
+                border-radius: 8px; margin: 10px 0;">
+        <h4 style="margin: 0; color: {status_color};">아두이노 상태</h4>
+        <p style="margin: 5px 0 0 0; color: {status_color}; font-weight: bold;">{connection_status}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 연결 제어 버튼 (연결되지 않은 경우만 표시)
+    if not is_arduino_connected:
+        if st.sidebar.button("🔗 아두이노 연결", type="primary", use_container_width=True):
+            with st.sidebar:
+                with st.spinner("아두이노 연결 중..."):
+                    if arduino_comm.connect():
+                        st.success("아두이노 연결 성공!")
+                        st.rerun()
+                    else:
+                        st.error("아두이노 연결 실패!")
+    else:
+        if st.sidebar.button("🔌 연결 해제", type="secondary", use_container_width=True):
+            arduino_comm.disconnect()
+            st.sidebar.success("연결이 해제되었습니다.")
+            st.rerun()
     
     # 메인 앱으로 돌아가기 버튼
     if st.sidebar.button("🏠 메인 앱으로 돌아가기", type="primary", use_container_width=True):
@@ -327,50 +360,55 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # 상단 제어 패널 (자동 새로고침 제거)
+    # 상단 제어 패널
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        if st.button("🔄 수동 새로고침", type="primary", use_container_width=True):
+        # 아두이노가 연결되지 않은 경우 버튼 비활성화
+        refresh_disabled = not is_arduino_connected
+        if st.button("🔄 수동 새로고침", type="primary", use_container_width=True, disabled=refresh_disabled):
             # 수동 새로고침 시 플래그 설정
             st.session_state.manual_refresh_clicked = True
             st.session_state.user_interaction = True
             st.rerun()
+        
+        if refresh_disabled:
+            st.caption("⚠️ 아두이노 연결이 필요합니다")
     
     with col2:
         if st.button("🏠 메인으로", use_container_width=True):
             st.session_state.page = "main"
             st.rerun()
     
-    # 현재 데이터 가져오기 (수동 새로고침 시에만)
+    # 현재 데이터 가져오기 (아두이노 연결 상태에 따라)
     current_data = None
     should_fetch_data = st.session_state.manual_refresh_clicked
     
-    if should_fetch_data and arduino_comm.is_connected():
-        # 새로운 데이터 가져오기
+    if not is_arduino_connected:
+        # 연결되지 않은 경우
+        if st.session_state.last_successful_data:
+            current_data = st.session_state.last_successful_data
+            st.warning("⚠️ 아두이노 연결이 끊어졌습니다. 마지막 데이터를 표시합니다.")
+        else:
+            st.error("❌ **아두이노 연결이 필요합니다**")
+            st.info("💡 사이드바에서 '🔗 아두이노 연결' 버튼을 클릭하여 연결하세요.")
+            current_data = {"error": "아두이노가 연결되지 않았습니다"}
+    elif should_fetch_data:
+        # 연결된 상태에서 새로고침 요청
         current_data = get_water_level_data()
-        # 수동 새로고침 플래그 리셋
         st.session_state.manual_refresh_clicked = False
         
         # 성공한 데이터인 경우 저장
         if current_data and "error" not in current_data:
             st.session_state.last_successful_data = current_data
-    elif not arduino_comm.is_connected():
-        # 연결되지 않은 경우 - 이전 데이터가 있으면 사용
-        if st.session_state.last_successful_data:
-            current_data = st.session_state.last_successful_data
-            # 연결 안됨 메시지를 추가하되 데이터는 유지
-            st.warning("⚠️ 아두이노 연결이 끊어졌습니다. 마지막 데이터를 표시합니다.")
-        else:
-            current_data = {"error": "아두이노에 연결되지 않았습니다. 사이드바에서 '🔗 아두이노 연결' 버튼을 클릭하세요."}
     else:
-        # 새로고침하지 않은 경우 - 이전 데이터가 있으면 사용
+        # 연결되어 있지만 새로고침하지 않은 경우
         if st.session_state.last_successful_data:
             current_data = st.session_state.last_successful_data
-            # 정보 메시지 표시
             st.info("ℹ️ 이전 데이터를 표시합니다. 최신 데이터를 보려면 '🔄 수동 새로고침' 버튼을 클릭하세요.")
         else:
-            current_data = {"error": "데이터를 가져오려면 '🔄 수동 새로고침' 버튼을 클릭하세요."}
+            st.info("📊 데이터를 가져오려면 '🔄 수동 새로고침' 버튼을 클릭하세요.")
+            current_data = {"error": "새로고침이 필요합니다"}
     
     if current_data and "error" not in current_data:
         water_data = current_data.get("water_data", {})
@@ -527,16 +565,16 @@ def main():
         
         # 제어 버튼
         col1_1, col1_2 = st.columns(2)
+        pump_control_disabled = not is_arduino_connected
+        
         with col1_1:
-            if st.button("🟢 펌프1 켜기", key="pump1_on", use_container_width=True):
+            if st.button("🟢 펌프1 켜기", key="pump1_on", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
-                # 간격 설정
                 time.sleep(1)
                 result = control_pump(1, "on")
                 if result.get("success", False):
                     st.success("펌프 1이 켜졌습니다!")
-                    # 상태 업데이트를 위해 수동 새로고침 플래그 설정
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
@@ -545,19 +583,21 @@ def main():
                     st.session_state.pump_control_in_progress = False
         
         with col1_2:
-            if st.button("🔴 펌프1 끄기", key="pump1_off", use_container_width=True):
+            if st.button("🔴 펌프1 끄기", key="pump1_off", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(1, "off")
                 if result.get("success", False):
                     st.success("펌프 1이 꺼졌습니다!")
-                    # 상태 업데이트를 위해 수동 새로고침 플래그 설정
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
                 else:
                     st.error(f"펌프 제어 실패: {result.get('error', '알 수 없는 오류')}")
                     st.session_state.pump_control_in_progress = False
+        
+        if pump_control_disabled:
+            st.caption("⚠️ 펌프 제어를 위해서는 아두이노 연결이 필요합니다")
     
     with pump_col2:
         st.markdown("### 🔧 펌프 2")
@@ -592,13 +632,12 @@ def main():
         # 제어 버튼  
         col2_1, col2_2 = st.columns(2)
         with col2_1:
-            if st.button("🟢 펌프2 켜기", key="pump2_on", use_container_width=True):
+            if st.button("🟢 펌프2 켜기", key="pump2_on", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(2, "on")
                 if result.get("success", False):
                     st.success("펌프 2가 켜졌습니다!")
-                    # 상태 업데이트를 위해 수동 새로고침 플래그 설정
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
@@ -607,19 +646,21 @@ def main():
                     st.session_state.pump_control_in_progress = False
         
         with col2_2:
-            if st.button("🔴 펌프2 끄기", key="pump2_off", use_container_width=True):
+            if st.button("🔴 펌프2 끄기", key="pump2_off", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(2, "off")
                 if result.get("success", False):
                     st.success("펌프 2가 꺼졌습니다!")
-                    # 상태 업데이트를 위해 수동 새로고침 플래그 설정
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
                 else:
                     st.error(f"펌프 제어 실패: {result.get('error', '알 수 없는 오류')}")
                     st.session_state.pump_control_in_progress = False
+        
+        if pump_control_disabled:
+            st.caption("⚠️ 펌프 제어를 위해서는 아두이노 연결이 필요합니다")
     
     st.markdown("---")
     

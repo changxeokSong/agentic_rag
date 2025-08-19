@@ -72,27 +72,56 @@ class DirectArduinoComm:
                     except Exception:
                         continue
         
-        # Windows 환경
+        # Windows 환경에서는 실제 아두이노 통신 테스트 수행
         if platform.system() == "Windows":
             for i in range(1, 21):
                 com_port = f"COM{i}"
                 try:
                     test_serial = serial.Serial(com_port, 115200, timeout=0.5)
-                    test_serial.close()
-                    logger.info(f"Windows COM{i} 연결 성공!")
-                    return com_port
-                except Exception:
+                    
+                    # 실제 아두이노인지 확인하기 위한 간단한 테스트
+                    test_serial.write(b"PING\n")
+                    test_serial.flush()
+                    time.sleep(0.2)
+                    
+                    # 응답이 있는지 확인 (아두이노가 아닌 다른 장치 제외)
+                    if test_serial.in_waiting > 0:
+                        response = test_serial.read(test_serial.in_waiting)
+                        test_serial.close()
+                        logger.info(f"Windows COM{i} 아두이노 연결 성공! 응답: {response}")
+                        return com_port
+                    else:
+                        # 응답이 없으면 아두이노가 아닐 가능성이 높음
+                        test_serial.close()
+                        logger.debug(f"COM{i}에서 응답 없음 (아두이노 아님)")
+                        continue
+                except Exception as e:
+                    logger.debug(f"COM{i} 연결 실패: {e}")
                     continue
         
-        # pyserial 포트 스캔
+        # pyserial 포트 스캔에서도 실제 아두이노 확인
         ports = serial.tools.list_ports.comports()
         for port in ports:
             try:
                 test_serial = serial.Serial(port.device, 115200, timeout=0.5)
-                test_serial.close()
-                logger.info(f"포트 {port.device} 연결 성공!")
-                return port.device
-            except Exception:
+                
+                # 실제 아두이노인지 확인하기 위한 간단한 테스트
+                test_serial.write(b"PING\n")
+                test_serial.flush()
+                time.sleep(0.2)
+                
+                # 응답이 있는지 확인
+                if test_serial.in_waiting > 0:
+                    response = test_serial.read(test_serial.in_waiting)
+                    test_serial.close()
+                    logger.info(f"포트 {port.device} 아두이노 연결 성공! 응답: {response}")
+                    return port.device
+                else:
+                    test_serial.close()
+                    logger.debug(f"{port.device}에서 응답 없음 (아두이노 아님)")
+                    continue
+            except Exception as e:
+                logger.debug(f"포트 {port.device} 연결 실패: {e}")
                 continue
         
         return None
@@ -178,12 +207,19 @@ class DirectArduinoComm:
     def disconnect(self) -> bool:
         """아두이노 연결 해제"""
         try:
-            if self.serial_connection and self.serial_connection.is_open:
+            if self.serial_connection and hasattr(self.serial_connection, 'is_open') and self.serial_connection.is_open:
                 self.serial_connection.close()
                 logger.info("아두이노 연결 해제 완료")
+            
+            # 연결 정보 초기화
+            self.serial_connection = None
+            self.arduino_port = None
             return True
         except Exception as e:
             logger.error(f"아두이노 연결 해제 실패: {str(e)}")
+            # 에러가 발생해도 연결 정보는 초기화
+            self.serial_connection = None
+            self.arduino_port = None
             return False
     
     def read_water_level(self, channel: Optional[int] = None) -> Dict[str, Any]:
@@ -437,16 +473,79 @@ class DirectArduinoComm:
             return {"success": False, "error": str(e)}
     
     def is_connected(self) -> bool:
-        """연결 상태 확인"""
+        """연결 상태 확인 (실제 통신 테스트 포함)"""
         if self.arduino_port == "SIMULATION":
             return True
         
-        # 실제 시리얼 연결 확인
+        # 시리얼 연결 객체가 없으면 연결되지 않음
         if not self.serial_connection:
+            self.arduino_port = None
+            return False
+            
+        # 시리얼 연결 객체가 올바르지 않으면 연결되지 않음
+        if not hasattr(self.serial_connection, 'is_open'):
+            self.serial_connection = None
+            self.arduino_port = None
             return False
             
         try:
-            return self.serial_connection.is_open
-        except Exception:
-            # 연결 객체가 손상된 경우
+            # 시리얼 포트가 열려있는지 확인
+            if not self.serial_connection.is_open:
+                self.serial_connection = None
+                self.arduino_port = None
+                return False
+            
+            # 실제 통신 테스트 (아두이노 응답 확인)
+            try:
+                # 실제 아두이노 통신 테스트
+                self.serial_connection.reset_input_buffer()
+                self.serial_connection.write(b"PING\n")
+                self.serial_connection.flush()
+                time.sleep(0.3)
+                
+                # 아두이노 응답 확인
+                has_response = self.serial_connection.in_waiting > 0
+                if has_response:
+                    response = self.serial_connection.read(self.serial_connection.in_waiting)
+                    logger.debug(f"아두이노 핑 응답: {response}")
+                
+                # 포트가 실제로 존재하는지 OS 레벨에서도 확인
+                import os
+                if self.arduino_port and self.arduino_port != "SIMULATION":
+                    # Windows COM 포트 체크
+                    if self.arduino_port.startswith("COM"):
+                        try:
+                            # 다른 시리얼 연결로 포트 존재 여부 재확인
+                            test_serial = serial.Serial(self.arduino_port, 115200, timeout=0.1)
+                            test_serial.close()
+                        except serial.SerialException:
+                            # COM 포트가 실제로 존재하지 않음
+                            logger.warning(f"COM 포트 {self.arduino_port}가 더 이상 존재하지 않습니다")
+                            self.disconnect()
+                            return False
+                    # Linux/Unix 시리얼 포트 체크  
+                    elif self.arduino_port.startswith("/dev/"):
+                        if not os.path.exists(self.arduino_port):
+                            logger.warning(f"시리얼 포트 {self.arduino_port}가 더 이상 존재하지 않습니다")
+                            self.disconnect()
+                            return False
+                
+                # 응답이 없으면 실제 아두이노가 아닐 가능성이 높음
+                if not has_response:
+                    logger.warning(f"포트 {self.arduino_port}에서 아두이노 응답이 없습니다 (실제 아두이노가 아님)")
+                    self.disconnect()
+                    return False
+                
+                return True
+                
+            except (serial.SerialException, OSError, AttributeError) as e:
+                logger.warning(f"아두이노 연결이 끊어짐: {e}")
+                # 연결이 끊어진 경우 정리
+                self.disconnect()
+                return False
+                
+        except Exception as e:
+            logger.error(f"연결 상태 확인 중 오류: {e}")
+            # 연결 객체가 손상된 경우 정리
+            self.disconnect()
             return False

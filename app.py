@@ -1,26 +1,15 @@
-# app.py - Streamlit 앱 (환경변수 활용 및 3단 레이아웃 적용)
+# app.py - Streamlit 앱
 
 import streamlit as st
-import asyncio
-import nest_asyncio
 import time
-import os
-import json
+import base64
 from datetime import datetime
 from models.lm_studio import LMStudioClient
-# from retrieval.vector_store import VectorStore # VectorStore 임포트 제거
 from core.orchestrator import Orchestrator
-from retrieval.document_loader import DocumentLoader # 이 로더는 save_file에서 사용되므로 유지
 from utils.logger import setup_logger
+from utils.helpers import clean_ai_response
 from config import print_config, DEBUG_MODE, ENABLED_TOOLS
-import pandas as pd
-import tempfile
 from storage.postgresql_storage import PostgreSQLStorage
-# from bson.objectid import ObjectId
-import base64
-
-# 비동기 지원을 위한 nest_asyncio 설정
-nest_asyncio.apply()
 
 # 로거 설정
 logger = setup_logger(__name__)
@@ -71,25 +60,32 @@ def initialize_system():
                 if 'arduino_water_sensor' in orchestrator.tool_manager.tools:
                     try:
                         arduino_tool = orchestrator.tool_manager.tools['arduino_water_sensor']
-                        if arduino_tool._connect_to_arduino():
-                            logger.info("아두이노 자동 연결 성공")
-                            st.toast("🔌 아두이노 자동 연결 성공!", icon="✅")
+                        # 먼저 포트를 찾아본다
+                        found_port = arduino_tool._find_arduino_port()
+                        if found_port and found_port != "SIMULATION":
+                            # 실제 하드웨어 포트가 발견된 경우에만 연결 시도
+                            if arduino_tool._connect_to_arduino():
+                                logger.info("아두이노 자동 연결 성공")
+                                st.toast("🔌 아두이노 자동 연결 성공!", icon="✅")
+                            else:
+                                logger.warning("아두이노 자동 연결 실패")
+                                st.warning("⚠️ 아두이노 자동 연결 실패 - USB 연결 및 드라이버를 확인하세요")
+                        elif found_port == "SIMULATION":
+                            logger.info("아두이노 시뮬레이션 모드")
+                            arduino_tool.arduino_port = "SIMULATION"
+                            st.info("🔄 아두이노 시뮬레이션 모드로 실행됩니다")
                         else:
-                            logger.warning("아두이노 자동 연결 실패")
-                            st.warning("⚠️ 아두이노 자동 연결 실패 - USB 연결을 확인하세요")
+                            logger.warning("아두이노 포트를 찾을 수 없음")
+                            st.warning("⚠️ 아두이노를 찾을 수 없습니다 - USB 연결을 확인하세요")
                     except Exception as e:
                         logger.error(f"아두이노 자동 연결 중 오류: {e}")
                         st.warning(f"⚠️ 아두이노 연결 시도 중 오류: {str(e)}")
                 
-                # 대시보드용 아두이노 직접 통신 객체 초기화 및 연결
+                # 대시보드용 아두이노 직접 통신 객체 초기화 (자동 연결 안함)
                 from utils.arduino_direct import DirectArduinoComm
                 if 'shared_arduino' not in st.session_state:
                     st.session_state.shared_arduino = DirectArduinoComm()
-                    # 시스템 초기화 시 아두이노 연결 시도
-                    if st.session_state.shared_arduino.connect():
-                        logger.info("대시보드용 아두이노 연결 성공")
-                    else:
-                        logger.warning("대시보드용 아두이노 연결 실패")
+                    # 주의: 객체만 생성하고 자동 연결은 하지 않음 (사용자가 수동으로 연결 버튼 클릭 필요)
             
             # PostgreSQLStorage 초기화
             try:
@@ -107,27 +103,6 @@ def initialize_system():
             st.error(f"시스템 초기화 중 오류가 발생했습니다: {str(e)}")
             return False
 
-# --- (기존의 다른 함수들은 변경 없이 그대로 유지) ---
-async def process_query_async(query):
-    """질의를 비동기적으로 처리"""
-    orchestrator = st.session_state.orchestrator
-    start_time = time.time()
-    
-    try:
-        result = await orchestrator.process_query(query)
-        
-        # 디버그 정보 업데이트
-        st.session_state.debug_info = {
-            "query": query,
-            "tool_calls": result.get("tool_calls", "N/A"),
-            "tool_results": result.get("tool_results", "N/A"),
-            "processing_time": f"{time.time() - start_time:.2f} 초"
-        }
-        
-        return result
-    except Exception as e:
-        logger.error(f"질의 처리 오류: {str(e)}")
-        return f"질의 처리 중 오류가 발생했습니다: {str(e)}"
 
 def display_pdf_inline(file_bytes: bytes, filename: str):
     """PDF 바이트를 인라인으로 렌더링"""
@@ -487,11 +462,28 @@ def main():
                         arduino_status = "🔄 시뮬레이션"
                         arduino_color = "#f59e0b"
                     elif port and serial_conn and hasattr(serial_conn, 'is_open') and serial_conn.is_open:
-                        # Windows COM 포트 처리
-                        port_name = port.split('\\')[-1] if '\\' in port else port.split('/')[-1]
-                        arduino_status = f"✅ 연결됨 ({port_name})"
-                        arduino_color = "#16a34a"
+                        # 실제 연결 상태를 다시 한번 확인
+                        try:
+                            # 시리얼 연결이 실제로 작동하는지 테스트
+                            serial_conn.write(b"STATUS\n")
+                            serial_conn.flush()
+                            # Windows COM 포트 처리
+                            port_name = port.split('\\')[-1] if '\\' in port else port.split('/')[-1]
+                            arduino_status = f"✅ 연결됨 ({port_name})"
+                            arduino_color = "#16a34a"
+                        except Exception as e:
+                            # 실제로는 연결이 안된 상태
+                            arduino_status = "❌ 연결 끊어짐"
+                            arduino_color = "#dc2626"
+                            # 연결을 닫고 포트 정보 초기화
+                            try:
+                                serial_conn.close()
+                            except:
+                                pass
+                            arduino_tool.serial_connection = None
+                            arduino_tool.arduino_port = None
                     elif port:
+                        # 포트는 있지만 연결이 안된 상태
                         port_name = port.split('\\')[-1] if '\\' in port else port.split('/')[-1]
                         arduino_status = f"🔌 포트 발견 ({port_name})"
                         arduino_color = "#3b82f6"
@@ -577,7 +569,7 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        # 일반 AI 메시지
+                        # 일반 AI 메시지 - HTML과 마크다운을 분리
                         st.markdown(f"""
                         <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
                             <div style="width: 40px; height: 40px; border-radius: 50%; 
@@ -587,14 +579,224 @@ def main():
                                         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
                                 🤖
                             </div>
-                            <div style="background: white; color: #191919; padding: 12px 16px; 
-                                        border-radius: 4px 18px 18px 18px; max-width: 70%; 
-                                        box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #e1e1e1;
-                                        font-size: 14px; line-height: 1.5; word-break: break-word;">
-                                {message["content"]}
-                            </div>
                         </div>
                         """, unsafe_allow_html=True)
+                        
+                        # AI 메시지 내용을 깔끔한 마크다운으로만 표시
+                        with st.container():
+                            # 가독성 향상을 위한 CSS
+                            st.markdown("""
+                            <style>
+                            .ai-message-container {
+                                margin-left: 48px;
+                                position: relative;
+                                max-width: 80%;
+                                margin-top: -8px;
+                            }
+                            .ai-message-content {
+                                background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+                                color: #1f2937;
+                                padding: 24px 28px;
+                                border-radius: 8px 20px 20px 8px;
+                                box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+                                border: 1px solid #e2e8f0;
+                                font-size: 15px;
+                                line-height: 1.7;
+                                position: relative;
+                            }
+                            .ai-message-content::before {
+                                content: '';
+                                position: absolute;
+                                left: -1px;
+                                top: 20%;
+                                height: 60%;
+                                width: 4px;
+                                background: linear-gradient(135deg, #667eea, #764ba2);
+                                border-radius: 0 4px 4px 0;
+                            }
+                            .ai-message-content h2 {
+                                font-size: 20px !important;
+                                margin: 0 0 20px 0 !important;
+                                color: #1e40af !important;
+                                border-bottom: 3px solid #e0e7ff;
+                                padding-bottom: 10px;
+                                font-weight: 700 !important;
+                                display: flex;
+                                align-items: center;
+                                gap: 8px;
+                            }
+                            .ai-message-content h3 {
+                                font-size: 17px !important;
+                                margin: 24px 0 14px 0 !important;
+                                color: #374151 !important;
+                                font-weight: 650 !important;
+                                background: linear-gradient(90deg, #f1f5f9, transparent);
+                                padding: 8px 12px;
+                                border-left: 4px solid #64748b;
+                                border-radius: 0 8px 8px 0;
+                            }
+                            .ai-message-content p {
+                                margin: 12px 0 !important;
+                                font-size: 15px !important;
+                                line-height: 1.7 !important;
+                                text-align: justify;
+                            }
+                            .ai-message-content ul {
+                                margin: 16px 0 !important;
+                                padding-left: 20px !important;
+                            }
+                            .ai-message-content li {
+                                font-size: 15px !important;
+                                line-height: 1.7 !important;
+                                margin: 8px 0 !important;
+                                padding-left: 8px;
+                            }
+                            .ai-message-content table {
+                                width: 100% !important;
+                                border-collapse: collapse !important;
+                                margin: 20px 0 !important;
+                                font-size: 14px !important;
+                                border-radius: 8px;
+                                overflow: hidden;
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                            }
+                            .ai-message-content th, .ai-message-content td {
+                                padding: 14px 18px !important;
+                                border: 1px solid #e2e8f0 !important;
+                                text-align: left !important;
+                                font-size: 14px !important;
+                            }
+                            .ai-message-content th {
+                                background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+                                font-weight: 650 !important;
+                                color: #475569 !important;
+                            }
+                            .ai-message-content td {
+                                background: #fefefe !important;
+                            }
+                            .ai-message-content strong {
+                                font-weight: 650 !important;
+                                color: #1e293b !important;
+                            }
+                            .ai-message-content hr {
+                                margin: 24px 0 !important;
+                                border: none !important;
+                                height: 2px !important;
+                                background: linear-gradient(90deg, #e2e8f0, transparent) !important;
+                            }
+                            .pdf-download-btn {
+                                position: absolute;
+                                bottom: 8px;
+                                right: 12px;
+                                z-index: 10;
+                            }
+                            .pdf-download-btn a {
+                                background: rgba(102, 126, 234, 0.1);
+                                color: #667eea;
+                                padding: 6px 10px;
+                                border-radius: 6px;
+                                text-decoration: none;
+                                font-size: 12px;
+                                font-weight: 500;
+                                border: 1px solid rgba(102, 126, 234, 0.2);
+                                transition: all 0.2s;
+                                display: inline-block;
+                                cursor: pointer;
+                                pointer-events: auto;
+                            }
+                            .pdf-download-btn a:hover {
+                                background: rgba(102, 126, 234, 0.2);
+                                transform: translateY(-1px);
+                                box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+                            
+                            # 메시지 컨테이너와 PDF 버튼을 함께 배치
+                            if message["role"] == "assistant" and not is_thinking:
+                                from datetime import datetime
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                
+                                # PDF 다운로드 버튼 파라미터 생성
+                                download_button_args = None
+                                try:
+                                    from utils.pdf_generator import (
+                                        MarkdownToPDFConverter, 
+                                        is_pdf_available
+                                    )
+                                    
+                                    if is_pdf_available():
+                                        pdf_converter = MarkdownToPDFConverter()
+                                        # 영문 파일명으로 변경 (한글 파일명 문제 해결)
+                                        filename = f"agentic_rag_report_{timestamp}.pdf"
+                                        pdf_bytes = pdf_converter.convert_markdown_to_pdf(message["content"], filename)
+                                        download_button_args = {
+                                            "label": "📄 PDF",
+                                            "data": pdf_bytes,
+                                            "file_name": filename,
+                                            "mime": "application/pdf"
+                                        }
+                                    else:
+                                        # 텍스트 파일도 영문 파일명으로 변경
+                                        filename = f"agentic_rag_report_{timestamp}.txt"
+                                        text_bytes = message["content"].encode('utf-8')
+                                        download_button_args = {
+                                            "label": "📝 저장",
+                                            "data": text_bytes,
+                                            "file_name": filename,
+                                            "mime": "text/plain"
+                                        }
+                                except Exception as e:
+                                    logger.error(f"다운로드 버튼 생성 오류: {str(e)}")
+                                    # 오류 발생시 기본 텍스트 저장 버튼 제공
+                                    filename = f"agentic_rag_report_{timestamp}.txt"
+                                    text_bytes = message["content"].encode('utf-8')
+                                    download_button_args = {
+                                        "label": "📝 저장",
+                                        "data": text_bytes,
+                                        "file_name": filename,
+                                        "mime": "text/plain"
+                                    }
+                                
+                                # 메시지 마크다운을 HTML로 변환해 코드블록 누락 등으로 인한 HTML 누출 방지
+                                try:
+                                    import markdown as _md
+                                    message_html = _md.markdown(message["content"], extensions=['tables', 'fenced_code'])
+                                except Exception:
+                                    # 변환 실패 시 원문 그대로 출력하되 안전을 위해 escape 처리 없이 출력 (기존 동작 유지)
+                                    message_html = message["content"]
+
+                                # 컨테이너 내부 오른쪽 아래에 표시될 다운로드 버튼(앵커) HTML 구성
+                                download_anchor_html = ""
+                                if download_button_args:
+                                    import base64 as _b64
+                                    data_bytes = download_button_args.get("data", b"")
+                                    file_name = download_button_args.get("file_name", f"agentic_rag_report_{timestamp}.txt")
+                                    mime_type = download_button_args.get("mime", "application/octet-stream")
+                                    b64_data = _b64.b64encode(data_bytes).decode()
+                                    download_anchor_html = f'''
+                                    <div class="pdf-download-btn">
+                                        <a href="data:{mime_type};base64,{b64_data}" download="{file_name}" title="파일 저장">
+                                            {download_button_args.get("label", "⬇️ 다운로드")}
+                                        </a>
+                                    </div>
+                                    '''
+
+                                # 메시지 내용과 다운로드 버튼을 같은 컨테이너에 렌더링
+                                # 컨테이너를 먼저 렌더링하고, 그 다음 HTML 앵커를 별도 출력하여
+                                # 일부 환경에서 앵커가 코드처럼 보이는 문제를 방지
+                                st.markdown(f'''
+                                <div class="ai-message-container">
+                                    <div class="ai-message-content">
+                                        {message_html}
+                                    </div>
+                                </div>
+                                ''', unsafe_allow_html=True)
+                                if download_anchor_html:
+                                    st.markdown(download_anchor_html, unsafe_allow_html=True)
+                            else:
+                                # thinking 상태이거나 사용자 메시지인 경우 일반 표시
+                                st.markdown(f'<div class="ai-message-content">{message["content"]}</div>', unsafe_allow_html=True)
                     
                     # 타임스탬프와 처리시간 (왼쪽 정렬, 프로필 이미지 만큼 들여쓰기)
                     if not is_thinking:
@@ -637,7 +839,13 @@ def main():
 
         # 사용자 입력 (플레이스홀더 개선)
         placeholder_text = "메시지를 입력하세요..."
-        if prompt := st.chat_input(placeholder_text, key="main_chat_input"):
+        # AI 응답 생성 중일 때 입력창 비활성화 - thinking 메시지가 있으면 처리 중으로 간주
+        is_processing = (st.session_state.messages and 
+                        st.session_state.messages[-1].get("is_thinking", False))
+        if is_processing:
+            placeholder_text = "AI가 응답 생성 중입니다..."
+        
+        if prompt := st.chat_input(placeholder_text, key="main_chat_input", disabled=is_processing):
             if not is_system_initialized:
                 st.toast("⚠️ 먼저 '시스템 초기화'를 실행해주세요!", icon="🔄")
             else:
@@ -681,9 +889,11 @@ def main():
                 processing_time = time.time() - start_time
                 
                 # thinking 메시지를 실제 응답으로 교체
+                # AI 응답 정리 적용
+                cleaned_response = clean_ai_response(response_text)
                 st.session_state.messages[-1] = {
                     "role": "assistant",
-                    "content": response_text,
+                    "content": cleaned_response,
                     "tool_results": orchestrator_result.get("tool_results", {}),
                     "timestamp": datetime.now().strftime("%H:%M"),
                     "processing_time": f"{processing_time:.2f}초"
@@ -706,9 +916,11 @@ def main():
                 
             except Exception as e:
                 # 오류 발생 시 오류 메시지로 교체
+                error_message = f"❌ 오류가 발생했습니다: {str(e)}"
+                cleaned_error = clean_ai_response(error_message)
                 st.session_state.messages[-1] = {
                     "role": "assistant", 
-                    "content": f"❌ 오류가 발생했습니다: {str(e)}",
+                    "content": cleaned_error,
                     "timestamp": datetime.now().strftime("%H:%M")
                 }
                 
@@ -786,7 +998,7 @@ def main():
                 if not file_list:
                     st.write("업로드된 파일이 없습니다.")
                 else:
-                    for file_info in file_list:
+                    for idx, file_info in enumerate(file_list):
                         file_id = file_info.get('_id')
                         with st.container(border=True):
                             st.markdown(f"**📄 {file_info.get('filename', 'N/A')}**")
@@ -801,7 +1013,7 @@ def main():
                                         label="⬇️ 다운로드",
                                         data=bytes(file_content),
                                         file_name=file_info.get('filename'),
-                                        key=f"download_{file_id}",
+                                        key=f"download_{idx}_{file_id}",
                                         use_container_width=True
                                     )
             else:

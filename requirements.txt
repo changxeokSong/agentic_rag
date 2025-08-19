@@ -38,3 +38,10 @@ aiohttp
 # Data Visualization for Dashboard
 plotly
 pypdf
+
+# PDF Generation
+markdown
+weasyprint
+pdfkit
+reportlab
+beautifulsoup4

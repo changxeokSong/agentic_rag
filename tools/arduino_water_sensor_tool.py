@@ -59,55 +59,26 @@ class ArduinoWaterSensorTool:
     
     def _find_arduino_port(self) -> Optional[str]:
         """아두이노 시리얼 포트 자동 감지"""
-        logger.info("아두이노 포트 검색 중...")
-        
-        # WSL2 환경 체크
         import platform
         import os
         
         # WSL2 환경 감지
         is_wsl = os.path.exists('/proc/version') and 'microsoft' in open('/proc/version').read().lower()
         if is_wsl:
-            logger.info("WSL2 환경이 감지되었습니다!")
-            
-            # WSL2에서 이미 포워딩된 USB 포트가 있는지 확인
             linux_usb_ports = self._check_wsl_usb_ports()
             if linux_usb_ports:
-                logger.info(f"🎉 usbipd-win으로 포워딩된 USB 포트 발견: {linux_usb_ports}")
-                logger.info("실제 아두이노 하드웨어와 연결을 시도합니다.")
-                
                 # 각 포트에 대해 연결 시도
                 for port in linux_usb_ports:
                     try:
-                        logger.info(f"포트 {port} 연결 시도 중...")
                         test_serial = serial.Serial(port, 115200, timeout=0.5)
                         test_serial.close()
-                        logger.info(f"✅ 아두이노 포트 연결 성공: {port}")
+                        logger.info(f"아두이노 포트 발견: {port}")
                         return port
-                    except serial.SerialException as e:
-                        logger.warning(f"포트 {port} 연결 실패: {e}")
+                    except serial.SerialException:
                         continue
-                
-                # 연결 실패 시 첫 번째 포트 반환 (권한 문제일 수 있음)
-                logger.warning("모든 포트 연결 실패. 권한 문제일 수 있습니다.")
-                logger.warning(f"권한 설정 시도: sudo chmod 666 {linux_usb_ports[0]}")
-                return linux_usb_ports[0]
+                return linux_usb_ports[0]  # 첫 번째 포트 반환
             
-            # 포트가 없는 경우 usbipd-win 안내
-            logger.warning("WSL2에서 USB 포트가 감지되지 않았습니다.")
-            logger.warning("usbipd-win을 사용하여 아두이노 포트를 포워딩하세요.")
-            logger.warning("=" * 60)
-            logger.warning("📋 usbipd-win 설정 가이드:")
-            logger.warning("1. Windows PowerShell (관리자 권한)에서 실행:")
-            logger.warning("   winget install usbipd")
-            logger.warning("2. 아두이노 USB 연결 후 장치 목록 확인:")
-            logger.warning("   usbipd list")
-            logger.warning("3. 아두이노 장치를 WSL2에 연결 (BUSID는 위에서 확인):")
-            logger.warning("   usbipd attach --wsl --busid <BUSID>")
-            logger.warning("4. WSL2에서 연결 확인:")
-            logger.warning("   ls /dev/ttyACM* 또는 ls /dev/ttyUSB*")
-            logger.warning("=" * 60)
-            logger.warning("현재는 시뮬레이션 모드로 동작합니다.")
+            logger.info("WSL2에서 USB 포트 미감지 - 시뮬레이션 모드")
             return "SIMULATION"
         
         # Linux 환경에서 USB 시리얼 포트 검색
@@ -309,7 +280,18 @@ class ArduinoWaterSensorTool:
             logger.info("Arduino Mega 2560 부팅 완료 대기 중...")
             time.sleep(2)
             
+            # 핑 테스트 명령 전송
+            try:
+                self.serial_connection.write(b"PING\n")
+                self.serial_connection.flush()
+                logger.info("PING 명령 전송됨")
+                time.sleep(1)
+            except Exception as e:
+                logger.error(f"PING 명령 전송 실패: {e}")
+                return False
+            
             # 수위 센서 데이터 수신 대기 (최대 10초)
+            data_received = False
             start_time = time.time()
             while (time.time() - start_time) < 10:
                 if self.serial_connection.in_waiting > 0:
@@ -317,22 +299,31 @@ class ArduinoWaterSensorTool:
                         data = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
                         if data:
                             logger.info(f"Arduino Mega 2560에서 데이터 수신: {data}")
+                            data_received = True
+                            # PONG 응답 확인
+                            if 'PONG' in data.upper():
+                                logger.info("✅ PING-PONG 응답 확인됨!")
+                                return True
                             # 수위 데이터 형식 확인
-                            if 'water level' in data.lower() or '%' in data or 'level' in data.lower():
+                            elif 'water level' in data.lower() or '%' in data or 'level' in data.lower():
                                 logger.info("✅ 수위 센서 데이터 확인됨!")
                                 return True
                             else:
                                 logger.info("Arduino에서 데이터 수신 확인")
-                                return True
                     except Exception as e:
                         logger.debug(f"데이터 읽기 중 오류: {e}")
                         continue
                 
                 time.sleep(0.1)
             
-            # 데이터가 없어도 연결은 성공한 것으로 간주 (Arduino가 부팅 중일 수 있음)
-            logger.info("Arduino Mega 2560 연결 확인됨 (데이터 대기 중)")
-            return True
+            # 실제 데이터가 수신되지 않으면 연결 실패로 간주
+            if not data_received:
+                logger.warning("Arduino에서 데이터가 수신되지 않았습니다. 연결이 올바르지 않을 수 있습니다.")
+                return False
+            else:
+                # 데이터는 수신되었지만 예상 형식이 아닌 경우
+                logger.info("Arduino 연결 확인됨 (비표준 데이터)")
+                return True
             
         except Exception as e:
             logger.error(f"Arduino Mega 2560 연결 테스트 실패: {e}")
@@ -348,6 +339,38 @@ class ArduinoWaterSensorTool:
             return True
         except Exception as e:
             logger.error(f"아두이노 연결 해제 실패: {str(e)}")
+            return False
+    
+    def _is_connected(self) -> bool:
+        """현재 아두이노 연결 상태 확인 (재연결 시도 없이)"""
+        try:
+            # 시뮬레이션 모드인 경우
+            if self.arduino_port == "SIMULATION":
+                return True
+            
+            # 시리얼 연결 객체가 없거나 닫혀있는 경우
+            if not self.serial_connection or not self.serial_connection.is_open:
+                return False
+            
+            # 간단한 연결 테스트 (빠른 체크)
+            try:
+                # 시리얼 포트가 여전히 유효한지 확인
+                self.serial_connection.write(b"")
+                self.serial_connection.flush()
+                return True
+            except Exception as e:
+                logger.warning(f"연결 상태 체크 실패: {e}")
+                # 연결이 끊어진 것으로 판단하고 정리
+                try:
+                    self.serial_connection.close()
+                except:
+                    pass
+                self.serial_connection = None
+                self.arduino_port = None
+                return False
+                
+        except Exception as e:
+            logger.error(f"연결 상태 확인 중 오류: {e}")
             return False
     
     def _test_communication(self) -> Dict[str, Any]:
@@ -428,6 +451,44 @@ class ArduinoWaterSensorTool:
     
     def _read_water_level(self, channel: Optional[int] = None) -> Dict[str, Any]:
         """수위 센서 값 읽기 (전체 또는 특정 채널)"""
+        # 시뮬레이션 모드 처리
+        if self.arduino_port == "SIMULATION":
+            import random
+            
+            # 시뮬레이션 데이터 생성
+            if channel is not None:
+                # 특정 채널 요청
+                simulated_level = random.randint(20, 80)
+                return {
+                    "success": True,
+                    "current_water_level": simulated_level,
+                    "average_water_level": simulated_level,
+                    "readings": [{'channel': channel, 'level': simulated_level}],
+                    "channel_levels": {channel: simulated_level},
+                    "unit": "percent",
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "message": f"🔄 **시뮬레이션 모드** - 채널 {channel} 수위  \n• 현재 수위: **{simulated_level}%**",
+                    "simulation_mode": True
+                }
+            else:
+                # 전체 채널 요청
+                levels = [random.randint(20, 80) for _ in range(3)]
+                current_level = levels[0]
+                average_level = sum(levels) / len(levels)
+                channel_levels = {i: levels[i] for i in range(len(levels))}
+                
+                return {
+                    "success": True,
+                    "current_water_level": current_level,
+                    "average_water_level": round(average_level, 1),
+                    "readings": [{'channel': i, 'level': levels[i]} for i in range(len(levels))],
+                    "channel_levels": channel_levels,
+                    "unit": "percent",
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "message": f"🔄 **시뮬레이션 모드** - 수위 센서  \n• 현재 수위: **{current_level}%**  \n• 평균 수위: **{round(average_level, 1)}%**",
+                    "simulation_mode": True
+                }
+        
         if not self.serial_connection or not self.serial_connection.is_open:
             return {"error": "❌ **연결 오류**  \n• 아두이노에 연결되지 않았습니다", "success": False}
         
@@ -650,6 +711,26 @@ class ArduinoWaterSensorTool:
     
     def _send_pump_command(self, pump_id: int, state: str, duration: Optional[int] = None, auto_status: bool = False) -> Dict[str, Any]:
         """펌프 제어 명령 전송 (Arduino 코드의 명령어 프로토콜에 맞춤)"""
+        # 시뮬레이션 모드 처리
+        if self.arduino_port == "SIMULATION":
+            result = {
+                "success": True,
+                "message": f"🔄 **시뮬레이션 모드** - 펌프{pump_id} 제어  \n• 상태: {state}",
+                "command": f"PUMP{pump_id}_{state}",
+                "response": "SIMULATION_ACK",
+                "ack_received": True,
+                "pump_id": pump_id,
+                "new_state": state,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "simulation_mode": True
+            }
+            
+            if duration and state == "ON":
+                result["auto_off_duration"] = duration
+                result["message"] += f" ({duration}초 후 자동 종료)"
+            
+            return result
+        
         if not self.serial_connection or not self.serial_connection.is_open:
             return {"error": "❌ **연결 오류**  \n• 아두이노에 연결되지 않았습니다", "success": False}
         
@@ -972,58 +1053,63 @@ class ArduinoWaterSensorTool:
             
             elif action == "test_communication":
                 # 통신 테스트는 연결 상태 확인 후 실행
-                if not self._connect_to_arduino(port):
+                if not self._is_connected():
                     return {
                         "success": False,
-                        "error": "❌ **연결 필요**  \n• 통신 테스트를 위해 먼저 연결이 필요합니다",
+                        "error": "❌ **연결 필요**  \n• 아두이노가 연결되지 않았습니다. 먼저 connect 액션을 사용하여 연결하세요.",
                         "timestamp": current_time
                     }
                 return self._test_communication()
             
             elif action == "pump_status" or action == "read_pump_status":
                 # 펌프 상태 확인은 연결 상태 확인 후 실행
-                if not self._connect_to_arduino(port):
+                if not self._is_connected():
                     return {
                         "success": False,
-                        "error": "❌ **연결 필요**  \n• 펌프 상태 확인을 위해 먼저 연결이 필요합니다",
+                        "error": "❌ **연결 필요**  \n• 아두이노가 연결되지 않았습니다. 먼저 connect 액션을 사용하여 연결하세요.",
                         "timestamp": current_time
                     }
                 return self._get_pump_status()
             
-            # 연결 확인 (자동 연결 시도)
-            if not self._connect_to_arduino(port):
-                return {
-                    "success": False,
-                    "error": "❌ **자동 연결 실패**  \n• USB 연결을 확인하세요  \n• 올바른 포트에 연결되어 있는지 확인하세요",
-                    "timestamp": current_time
-                }
-            
-            # 수위 읽기
-            if action == "read_water_level" or action == "read_current_level":
-                return self._read_water_level()
-            
-            elif action == "read_water_level_channel":
-                channel = kwargs.get('channel')
-                if channel is None:
+            # 데이터 읽기 및 펌프 제어 액션들 - 연결 상태 확인만 하고 자동 연결하지 않음
+            elif action in ["read_water_level", "read_current_level", "read_water_level_channel", 
+                           "pump1_on", "pump1_off", "pump2_on", "pump2_off"]:
+                
+                # 연결 상태 확인
+                if not self._is_connected():
                     return {
                         "success": False,
-                        "error": "❌ **채널 번호 필요**  \n• read_water_level_channel 액션에는 channel 파라미터가 필요합니다",
-                        "timestamp": current_time
+                        "error": "❌ **연결 필요**  \n• 아두이노가 연결되지 않았습니다  \n• 먼저 'connect' 액션을 사용하여 연결하거나  \n• 시스템 제어판에서 '시스템 초기화'를 다시 실행하세요",
+                        "timestamp": current_time,
+                        "suggested_action": "connect"
                     }
-                return self._read_water_level(channel=channel)
-            
-            # 펌프 제어 (자동 상태 확인 포함)
-            elif action == "pump1_on":
-                return self._send_pump_command(1, "ON", duration, auto_status=True)
-            
-            elif action == "pump1_off":
-                return self._send_pump_command(1, "OFF", auto_status=True)
-            
-            elif action == "pump2_on":
-                return self._send_pump_command(2, "ON", duration, auto_status=True)
-            
-            elif action == "pump2_off":
-                return self._send_pump_command(2, "OFF", auto_status=True)
+                
+                # 수위 읽기
+                if action == "read_water_level" or action == "read_current_level":
+                    return self._read_water_level()
+                
+                elif action == "read_water_level_channel":
+                    channel = kwargs.get('channel')
+                    if channel is None:
+                        return {
+                            "success": False,
+                            "error": "❌ **채널 번호 필요**  \n• read_water_level_channel 액션에는 channel 파라미터가 필요합니다",
+                            "timestamp": current_time
+                        }
+                    return self._read_water_level(channel=channel)
+                
+                # 펌프 제어 (자동 상태 확인 포함)
+                elif action == "pump1_on":
+                    return self._send_pump_command(1, "ON", duration, auto_status=True)
+                
+                elif action == "pump1_off":
+                    return self._send_pump_command(1, "OFF", auto_status=True)
+                
+                elif action == "pump2_on":
+                    return self._send_pump_command(2, "ON", duration, auto_status=True)
+                
+                elif action == "pump2_off":
+                    return self._send_pump_command(2, "OFF", auto_status=True)
             
             else:
                 return {

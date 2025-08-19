@@ -26,10 +26,6 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "10"))
 
-SEARCH_ENGINE_API_KEY = os.getenv("SEARCH_ENGINE_API_KEY", "")
-
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-
 # 임베딩 모델 설정 추가
 OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-ada-002")
@@ -44,22 +40,18 @@ TIMEOUT = int(os.getenv("TIMEOUT", "30"))
 
 DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
-# 활성화된 도구 확인
-# MongoDB 도구 추가
 ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
 
 # PostgreSQL configuration
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")
 PG_DB_PORT = os.getenv("PG_DB_PORT", "5432")
-PG_DB_NAME = os.getenv("PG_DB_NAME", "synergy") # 필수 설정
-PG_DB_USER = os.getenv("PG_DB_USER", "synergy") # 필수 설정
-PG_DB_PASSWORD = os.getenv("PG_DB_PASSWORD", "synergy") # 필수 설정
+PG_DB_NAME = os.getenv("PG_DB_NAME", "synergy")
+PG_DB_USER = os.getenv("PG_DB_USER", "synergy")
+PG_DB_PASSWORD = os.getenv("PG_DB_PASSWORD", "synergy")
 
-# 도구 정의 - 활성화된 도구만 포함
 def get_available_functions():
     """환경변수에 따라 활성화된 도구만 반환"""
     all_functions = [
-        # 검색(웹) 도구 제거됨
         {
             "name": "vector_search_tool",
             "description": "업로드된 내부 문서(예: PDF, 텍스트 파일 등)에서 벡터 검색을 통해 정보를 검색합니다. 특정 파일 내용, 사내 문서, 업로드한 보고서 등 내부 자료 검색이 필요할 때 사용하세요. 필요한 경우 특정 파일 이름이나 태그로 검색을 필터링할 수 있습니다.",
@@ -94,13 +86,12 @@ def get_available_functions():
                 "required": ["query"]
             }
         },
-        # MongoDB 도구 정의 추가
         {
             "name": "list_files_tool",
             "description": "데이터베이스에 저장된 파일 목록을 조회합니다. 사용자가 업로드한 파일의 이름이나 목록 정보가 필요할 때 사용하세요.",
             "parameters": {
                 "type": "object",
-                "properties": {}, # 매개변수 없음
+                "properties": {},
                 "required": []
             }
         },
@@ -153,7 +144,7 @@ def get_available_functions():
         },
         {
             "name": "arduino_water_sensor",
-            "description": "아두이노 USB 시리얼 통신을 통해 실시간 수위 센서 값을 읽고 펌프를 제어하는 도구입니다. 실제 센서 하드웨어에서 현재 수위를 측정합니다.\n예시: '현재 수위 알려줘', '수위 측정해줘', '아두이노 수위 읽어줘', '아두이노 수위 레벨 확인해줘', '펌프1 켜줘', '펌프2 꺼줘', '아두이노 연결해줘'",
+            "description": "아두이노 USB 시리얼 통신을 통해 실시간 수위 센서 값을 읽고 펌프를 제어하는 도구입니다. 실제 센서 하드웨어에서 현재 수위를 측정하고, 펌프1과 펌프2를 개별 제어할 수 있습니다.\n수위 측정 예시: '현재 수위 알려줘', '수위 측정해줘', '아두이노 수위 읽어줘'\n펌프 제어 예시: '펌프1 켜줘', '펌프2 켜줘', '펌프1 꺼줘', '펌프2 꺼줘', '펌프 상태 확인'\n연결 관리 예시: '아두이노 연결해줘', '아두이노 상태 확인'",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -190,135 +181,73 @@ def get_available_functions():
 # 사용 가능한 함수 목록
 AVAILABLE_FUNCTIONS = get_available_functions()
 
-# 프롬프트 템플릿 동적 생성
 def generate_function_selection_prompt():
     """활성화된 도구에 따라 프롬프트 템플릿 생성"""
     base_prompt = (
-        "사용자 요청을 분석하여 필요한 도구들을 JSON 배열로 반환하세요.\n\n"
-        "**중요:** 도구가 명확히 필요한 경우에만 선택하세요. 일반 대화나 인사말 등에는 도구를 사용하지 마세요.\n\n"
-        "**규칙:**\n"
-        "1. 명확하게 특정 기능이 필요한 경우에만 도구 선택\n"
-        "2. 여러 작업이 있으면 배열 [] 형태로 응답\n"
-        "3. 단일 작업이라도 배열 형태로 응답 (일관성 유지)\n"
-        "4. 도구가 필요하지 않으면 빈 배열 [] 반환\n"
-        "5. JSON 형태로만 응답, 다른 텍스트 금지\n"
-        "6. **펌프 번호를 정확히 구분하세요**: 펌프1 → pump1_on/pump1_off, 펌프2 → pump2_on/pump2_off\n\n"
+        "사용자 요청을 분석하여 적합한 도구를 선택하고 JSON 형식으로만 응답하세요.\n\n"
+        "**핵심 규칙:**\n"
+        "1. 사용자 의도 파악 후 필요한 도구와 인자 선택\n"
+        "2. 펌프 제어('펌프1/2 켜줘/꺼줘') → arduino_water_sensor 필수 사용\n"
+        "3. 여러 도구 필요시 모두 포함\n"
+        "4. 일반 대화/인사 → 빈 배열 `[]`\n"
+        "5. 오직 JSON 배열만 응답\n\n"
         "**응답 형식:**\n"
-        "- 도구 필요: [{\"name\": \"도구명\", \"arguments\": {\"인자\": \"값\"}}]\n"
-        "- 도구 불필요: []\n\n"
+        "- 도구 사용: `[{\"name\": \"도구명\", \"arguments\": {\"인자\": \"값\"}}]`\n"
+        "- 도구 불필요: `[]`\n\n"
         "**사용 가능한 도구:**\n"
     )
+    
     tools_desc = []
     for i, func in enumerate(AVAILABLE_FUNCTIONS, 1):
-        tools_desc.append(f"{i}. {func['name']}: {func['description']}")
+        # 도구 설명을 더 명확하게 구성
+        tools_desc.append(f"{i}. **{func['name']}**: {func['description']}")
 
-    # 도구 사용 가이드 (특히 vector_search_tool)
-    vector_guide = """
-**vector_search_tool 사용 가이드**
-
-- 언제 사용: 사용자가 업로드한 문서/보고서/PDF/텍스트 등 내부 자료에서 답을 찾으려는 의도가 분명할 때.
-- 필수 파라미터: snake_case 키만 사용하세요. `query`는 반드시 포함.
-- 선택 파라미터:
-  - `file_filter`(string): 특정 파일명이 질문에 명시되면 그대로 설정. 파일명이 명확하지 않으면 생략.
-  - `tags_filter`(array[string]): 질문에 태그/키워드가 명시된 경우 리스트로 설정.
-  - `top_k`(integer): 기본 10. 상위 몇 개 결과가 필요한지 질문에 있으면 반영.
-  - `mode`(string): `auto`(기본) | `vector` | `context`.
-    - 파일 내용의 의미/요약 질의 → `auto` 권장(먼저 vector 후 context 폴백)
-    - 단순 키워드 포함 여부 확인 → `context`
-- 금지: camelCase 키(`fileFilter`, `tagsFilter`, `topK`)는 사용하지 마세요.
-- 예: 파일명이 따옴표로 언급되면 그대로 `file_filter`에 넣습니다. 예: "내부 보고서.pdf" → `file_filter: "내부 보고서.pdf"`.
-"""
-
-    # 예시 추가
+    # 더 복합적이고 현실적인 예시를 추가하여 LLM의 이해도를 높임
     example_prompt = """
-**예시:**
+**## 주요 예시**
+- 일반 대화: "안녕? 오늘 기분 어때?" → `[]`
+- 단순 문서 검색: "지난 분기 보고서에서 매출 관련 내용 찾아줘" → `[{"name": "vector_search_tool", "arguments": {"query": "지난 분기 매출"}}]`
+- 조건부 문서 검색: "'프로젝트A_결과보고서.pdf' 파일에서 '핵심 성과' 부분 상위 5개만 요약해줘" → `[{"name": "vector_search_tool", "arguments": {"query": "핵심 성과 요약", "file_filter": "프로젝트A_결과보고서.pdf", "top_k": 5}}]`
+- 실시간 센서 측정: "지금 수위 좀 재줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]`
+- 펌프 제어: "펌프1 켜줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump1_on"}}]`
+- 펌프 제어: "펌프2 켜줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]`
+- 펌프 제어: "펌프1 꺼줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump1_off"}}]`
+- 펌프 제어: "펌프2 꺼줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump2_off"}}]`
+- 펌프 상태: "펌프 상태 확인해줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]`
+- 수위 예측: "앞으로 3시간 동안의 수위를 예측해줄래?" → `[{"name": "water_level_prediction_tool", "arguments": {"prediction_hours": 3}}]`
+- 복합 요청: "'운영 매뉴얼' 문서를 참고해서 현재 수위를 확인하고, 펌프 2번을 켜줘" → `[{"name": "vector_search_tool", "arguments": {"query": "펌프 2번 제어 방법", "file_filter": "운영 매뉴얼"}}, {"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]`
 
-1. "안녕하세요" 또는 "어떻게 지내세요?"
-   → []
+**## 핵심 키워드 매칭**
+- 펌프 관련: "펌프1", "펌프2", "pump1", "pump2", "켜줘", "꺼줘", "가동", "정지", "펌프 상태"
+- 수위 관련: "수위", "물위", "현재 수위", "수위 측정", "물 높이", "아두이노 수위"
+- 예측 관련: "예측", "미래", "앞으로", "시간 후", "분 후"
 
-2. "고마워요" 또는 "잘했어"
-   → []
+**## 사용자 질문**
+사용자 질문을 분석하여 위의 규칙과 예시에 따라 JSON 배열로 응답하세요:"""
 
-3. "업로드한 보고서에서 삼성의 자체 개발 AI 이름 찾아줘"
-    → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "mode": "auto", "top_k": 10}}]
-
-4. "'내부 보고서.pdf'에서 삼성 자체 개발 AI 이름 찾아줘"
-    → [{"name": "vector_search_tool", "arguments": {"query": "삼성 자체 개발 AI 이름", "file_filter": "내부 보고서.pdf", "mode": "auto"}}]
-
-5. "태그에 '삼성','AI'가 붙은 문서에서 자체 개발 AI 이름 찾아줘 (상위 5개)"
-    → [{"name": "vector_search_tool", "arguments": {"query": "자체 개발 AI 이름", "tags_filter": ["삼성", "AI"], "top_k": 5, "mode": "auto"}}]
-
-6. "펌프1 켜줘" 또는 "아두이노 펌프1 켜줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_on"}}]
-
-7. "펌프1 꺼줘" 또는 "아두이노 펌프1 꺼줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump1_off"}}]
-
-8. "펌프2 켜줘" 또는 "아두이노 펌프2 켜줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]
-
-9. "펌프2 꺼줘" 또는 "아두이노 펌프2 꺼줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump2_off"}}]
-
-10. "[10.5, 11.2, 12.1] 데이터로 수위 예측해줘"
-   → [{"name": "water_level_prediction_tool", "arguments": {"water_levels": [10.5, 11.2, 12.1]}}]
-
-11. "현재 수위 알려줘" 또는 "수위 측정해줘" 또는 "아두이노 수위 읽어줘" 또는 "아두이노 수위 레벨 확인해줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
-
-12. "COM4로 아두이노 연결해줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "connect", "port": "COM4"}}]
-
-13. "현재 펌프 상태 알려줘" 또는 "아두이노 펌프 상태 확인해줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]
-
-14. "현재 아두이노 수위 상태 알려줘" 또는 "아두이노 수위 확인해줘" 또는 "지금 수위 어떤지 알려줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level"}}]
-
-15. "아두이노 통신 테스트해줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "test_communication"}}]
-
-16. "채널 1 수위 알려줘" 또는 "센서 1번 수위 확인해줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 1}}]
-
-17. "채널 2 수위 측정해줘" 또는 "센서 2번 수위 읽어줘"
-   → [{"name": "arduino_water_sensor", "arguments": {"action": "read_water_level_channel", "channel": 2}}]
-
-"""
-    prompt = base_prompt + "\n".join(tools_desc) + "\n\n" + vector_guide + example_prompt + "\n사용자 질문 분석하여 JSON 배열로 응답:"
-    return prompt
+    return base_prompt + "\n".join(tools_desc) + "\n" + example_prompt
 
 # 도구 선택 프롬프트
 FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
-# 응답 생성 프롬프트
+# 응답 생성 프롬프트 (간소화)
 RESPONSE_GENERATION_PROMPT = """
-당신은 친근한 AI 어시스턴트입니다. 도구 실행 결과를 바탕으로 사용자에게 자연스럽고 간결한 답변을 제공하세요.
+다음 정보를 바탕으로 한국어로 간결하고 명확한 마크다운 답변을 작성하세요.
 
-**답변 규칙:**
-1. 헤더나 제목 없이 바로 본문으로 시작
-2. 핵심 결과만 간단히 요약해서 먼저 제시
-3. 여러 작업이 있으면 자연스럽게 연결해서 설명
-4. "다운로드 방법", "활용 방안" 같은 불필요한 안내 제거
-5. 과도한 상세 정보는 피하고 필요한 정보만 간결하게
+규칙:
+- 도구 결과가 없으면: 일반 대화에 맞게 짧고 공손한 답변만 작성하고, 섹션/표/상태 요약을 만들지 마세요.
+- 도구 결과가 있으면: 질문과 가장 관련 있는 핵심 결과만 요약하세요. 불필요한 템플릿(작업 결과/추가 조치/완료 메시지)은 넣지 마세요.
+- HTML 태그나 마크다운 코드 블록(```)은 사용하지 말고, 순수 텍스트로만 답변하세요.
+- 알 수 없거나 데이터가 부족하면 솔직하게 부족하다고 말하고, 가능한 다음 조치를 간단히 제안하세요.
 
-**좋은 답변 예시:**
-- 단일 작업: "1+1은 2입니다."
-- 다중 작업: "1+1은 2이고, 서울 날씨는 맑음이며 기온은 25.8°C입니다."
-- 날씨: "서울은 현재 맑음이고 기온은 25.8°C입니다."
+입력:
+- 사용자 질문: {user_query}
+- 도구 결과: {tool_results}
 
-**피해야 할 표현:**
-- "요약 및 결과 안내"
-- "자세한 결과 설명"
-- "다운로드 방법"
-- "성공적으로", "정확히" 같은 과도한 수식어
+출력:
+- 최대한 간단한 일반 텍스트 (마크다운 구문 없이)
+"""
 
-사용자 질문: {user_query}
-도구 실행 결과: {tool_results}
-
-위 결과를 바탕으로 자연스럽고 간결한 답변을 작성하세요:"""
-
-# 설정 정보 출력 (디버깅용)
 def print_config():
     """현재 설정 정보를 출력"""
     config_info = {
@@ -331,7 +260,7 @@ def print_config():
             "Response": RESPONSE_TEMPERATURE
         },
         "RAG": {
-            "Vector DB Path (Not used for MongoDB)": VECTOR_DB_PATH, # MongoDB 사용 시에는 이 경로를 사용하지 않음을 명시
+            "Vector DB Path": VECTOR_DB_PATH,
             "Chunk Size": CHUNK_SIZE,
             "Chunk Overlap": CHUNK_OVERLAP,
             "Top K Results": TOP_K_RESULTS
@@ -343,7 +272,7 @@ def print_config():
             "Timeout": TIMEOUT
         },
         "Enabled Tools": ENABLED_TOOLS,
-        "Embedding": { # 임베딩 설정 정보 추가
+        "Embedding": {
             "Model Name": EMBEDDING_MODEL_NAME
         },
         "PostgreSQL": {
