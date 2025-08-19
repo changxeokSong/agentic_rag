@@ -103,4 +103,188 @@ def clean_ai_response(response):
            (response.startswith("'") and response.endswith("'")):
             response = response[1:-1].strip()
     
+    # 코드 블록 제거 (일반 답변에서 코드 블록이 잘못 사용된 경우)
+    response = remove_unwanted_code_blocks(response)
+    
     return response
+
+def remove_unwanted_code_blocks(text: str) -> str:
+    """일반 답변에서 잘못 사용된 코드 블록을 제거합니다."""
+    if not text or '```' not in text:
+        return text
+    
+    import re
+    
+    # 코드 블록 패턴 찾기
+    pattern = re.compile(r"```[\w]*\n?(.*?)\n?```", re.DOTALL)
+    
+    def replace_code_block(match):
+        content = match.group(1).strip()
+        
+        # JSON이나 실제 코드가 아닌 일반 텍스트인 경우 코드 블록 제거
+        if not _looks_like_code_or_json(content):
+            return content
+        else:
+            # 실제 코드나 JSON인 경우 유지
+            return match.group(0)
+    
+    try:
+        result = pattern.sub(replace_code_block, text)
+        return result
+    except Exception:
+        # 정규식 처리 실패시 원본 반환
+        return text
+
+def _looks_like_code_or_json(content: str) -> bool:
+    """내용이 실제 코드나 JSON인지 판단합니다."""
+    content = content.strip()
+    
+    # JSON 형태인지 확인
+    if (content.startswith('{') and content.endswith('}')) or \
+       (content.startswith('[') and content.endswith(']')):
+        try:
+            import json
+            json.loads(content)
+            return True
+        except:
+            pass
+    
+    # 코드 특징 확인
+    code_indicators = [
+        'def ', 'class ', 'import ', 'from ', '#!/',
+        'function ', 'var ', 'const ', 'let ',
+        '<?php', '<html', '<script', 'SELECT ', 'INSERT '
+    ]
+    
+    if any(indicator in content for indicator in code_indicators):
+        return True
+    
+    # 일반 텍스트로 판단 (한국어 포함, 마크다운 형식 등)
+    korean_chars = re.search(r'[가-힣]', content)
+    markdown_patterns = re.search(r'^#+\s|^\*\s|^-\s|^\d+\.\s', content, re.MULTILINE)
+    
+    if korean_chars or markdown_patterns:
+        return False
+    
+    return False
+
+def normalize_markdown_tables(text: str) -> str:
+    """마크다운 표를 표준 형태로 정규화합니다.
+    - 헤더 구분선(| --- | --- |) 자동 생성/수정
+    - 행의 셀 개수를 헤더와 일치하도록 패딩/병합
+    - 앞뒤 불필요한 파이프 정리
+    - 깨진 구분선 줄 교체
+    실패 시 원본을 유지합니다.
+    """
+    if not text or '|' not in text:
+        return text
+
+    import re
+
+    def is_separator_line(line: str) -> bool:
+        s = line.strip()
+        if not s:
+            return False
+        # 파이프, 하이픈, 콜론, 스페이스만으로 구성된 경우
+        return all(ch in '|-: ' for ch in s) and '-' in s
+
+    def split_cells(raw_line: str):
+        parts = [p.strip() for p in raw_line.strip().split('|')]
+        # 양끝 공백 셀 제거
+        parts = [p for p in parts if p != '']
+        return parts
+
+    def join_cells(cells):
+        return '| ' + ' | '.join(cells) + ' |'
+
+    lines = text.splitlines()
+    output_lines = []
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        line = lines[i]
+        # 표 헤더 후보: 파이프 포함 + 두 셀 이상
+        if '|' in line and re.search(r'\S\s*\|\s*\S', line):
+            header_cells = split_cells(line)
+            if len(header_cells) >= 2:
+                block_lines = [line]
+                j = i + 1
+                # 표 블록 수집
+                while j < n and '|' in lines[j] and not lines[j].startswith('```'):
+                    block_lines.append(lines[j])
+                    j += 1
+
+                # 정규화 처리
+                normalized_block = []
+                # 헤더
+                normalized_block.append(join_cells(header_cells))
+
+                # 구분선 생성/수정
+                sep_line = None
+                body_start = 1
+                if len(block_lines) > 1 and is_separator_line(block_lines[1]):
+                    sep_line = block_lines[1]
+                    body_start = 2
+                # 헤더 셀 수에 맞춘 구분선 생성
+                separator = '| ' + ' | '.join(['---'] * len(header_cells)) + ' |'
+                normalized_block.append(separator)
+
+                # 본문 행 정규화
+                for k in range(body_start, len(block_lines)):
+                    row = block_lines[k]
+                    # 구분선이 본문에 섞여 있으면 무시
+                    if is_separator_line(row):
+                        continue
+                    row_cells = split_cells(row)
+                    if not row_cells:
+                        continue
+                    # 헤더 길이에 맞춰 패딩/병합
+                    if len(row_cells) < len(header_cells):
+                        row_cells = row_cells + [''] * (len(header_cells) - len(row_cells))
+                    elif len(row_cells) > len(header_cells):
+                        head = row_cells[:len(header_cells)-1]
+                        tail = ' '.join(row_cells[len(header_cells)-1:])
+                        row_cells = head + [tail]
+                    normalized_block.append(join_cells(row_cells))
+
+                output_lines.extend(normalized_block)
+                i = j
+                continue
+
+        # 표가 아니면 그대로 추가
+        output_lines.append(line)
+        i += 1
+
+    return "\n".join(output_lines)
+
+def unfence_markdown_tables(text: str) -> str:
+    """코드 펜스(``` ... ```) 안에 들어간 마크다운 표를 꺼내어 일반 표로 변환합니다.
+    - info string이 없거나(markdown, md 포함) 표 형태('|')가 감지되면 펜스를 제거합니다.
+    - json 코드블록은 그대로 유지합니다.
+    실패 시 원본 유지.
+    """
+    if not text or '```' not in text:
+        return text
+
+    import re
+
+    pattern = re.compile(r"```([a-zA-Z0-9_-]*)\n([\s\S]*?)\n```", re.MULTILINE)
+
+    def replace_block(match):
+        lang = (match.group(1) or '').strip().lower()
+        body = match.group(2)
+        # JSON 블록은 유지
+        if lang == 'json':
+            return match.group(0)
+        # 표 형태 감지: 파이프 포함 행이 2개 이상
+        table_like_lines = [line for line in body.splitlines() if '|' in line]
+        if len(table_like_lines) >= 2:
+            # 펜스 제거하고 본문만 반환
+            return body
+        return match.group(0)
+
+    try:
+        return pattern.sub(replace_block, text)
+    except Exception:
+        return text

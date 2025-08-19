@@ -4,6 +4,7 @@ from tools.list_files_tool import ListFilesTool
 from tools.vector_search_tool import VectorSearchTool
 from tools.water_level_prediction_tool import WaterLevelPredictionTool
 from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
+from tools.water_level_monitoring_tool import water_level_monitoring_tool
 from config import ENABLED_TOOLS
 from utils.logger import setup_logger
 
@@ -39,6 +40,10 @@ class ToolManager:
         if "arduino_water_sensor" in ENABLED_TOOLS:
             self.tools["arduino_water_sensor"] = ArduinoWaterSensorTool()
 
+        # 수위 모니터링 도구 등록 (함수형)
+        if "water_level_monitoring_tool" in ENABLED_TOOLS:
+            self.tools["water_level_monitoring_tool"] = water_level_monitoring_tool
+
         logger.info(f"등록된 도구: {', '.join(self.tools.keys())}")
     
     def execute_tool(self, tool_name, **kwargs):
@@ -66,7 +71,12 @@ class ToolManager:
         tool = self.tools[tool_name]
         
         try:
-            result = tool.execute(**normalized_kwargs)
+            # 함수형 도구 (water_level_monitoring_tool)
+            if callable(tool) and not hasattr(tool, 'execute'):
+                result = tool(**normalized_kwargs)
+            else:
+                # 클래스 기반 도구
+                result = tool.execute(**normalized_kwargs)
             return result
         except Exception as e:
             logger.error(f"도구 실행 오류 ({tool_name}): {str(e)}")
@@ -118,11 +128,20 @@ class ToolManager:
     
     def get_tool_info(self):
         """도구 정보 반환"""
-        return {
-            name: {
-                "name": tool.name,
-                "description": tool.description,
-                "active": True
-            }
-            for name, tool in self.tools.items()
-        }
+        tool_info = {}
+        for name, tool in self.tools.items():
+            if callable(tool) and not hasattr(tool, 'name'):
+                # 함수형 도구 (water_level_monitoring_tool)
+                tool_info[name] = {
+                    "name": name,
+                    "description": "수위 모니터링 도구",
+                    "active": True
+                }
+            else:
+                # 클래스 기반 도구
+                tool_info[name] = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "active": True
+                }
+        return tool_info

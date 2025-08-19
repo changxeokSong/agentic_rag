@@ -10,6 +10,7 @@ from utils.logger import setup_logger
 from utils.helpers import clean_ai_response
 from config import print_config, DEBUG_MODE, ENABLED_TOOLS
 from storage.postgresql_storage import PostgreSQLStorage
+from tools.water_level_monitoring_tool import water_level_monitoring_tool
 
 # 로거 설정
 logger = setup_logger(__name__)
@@ -932,29 +933,158 @@ def main():
 
     # --- 오른쪽 컬럼: 파일 관리 ---
     with right_col:
-        # 수위 그래프 및 실시간 상태
+        # 수위 모니터링 대시보드
         with st.container(border=True):
-            st.subheader("💧 수위 그래프")
+            st.subheader("💧 수위 모니터링")
             if is_system_initialized:
-                # 간단한 수위 표시 (시뮬레이션 데이터)
-                st.markdown("""
-                <div style="background: linear-gradient(to top, #3b82f6 30%, #e5e7eb 30%); 
-                           height: 60px; border-radius: 8px; position: relative; margin: 8px 0;">
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                               color: white; font-weight: bold; font-size: 12px;">30%</div>
-                </div>
-                """, unsafe_allow_html=True)
+                # 배수지 선택 버튼들
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    gagok_btn = st.button("🏔️ 가곡", use_container_width=True, key="gagok_btn")
+                with col2:
+                    haeryong_btn = st.button("🌊 해룡", use_container_width=True, key="haeryong_btn")
+                with col3:
+                    sangsa_btn = st.button("🏞️ 상사", use_container_width=True, key="sangsa_btn")
                 
-                # 실시간 상태 피드백
-                st.markdown("**실시간 상태 피드백**")
-                if 'shared_arduino' in st.session_state and st.session_state.shared_arduino:
-                    arduino = st.session_state.shared_arduino
-                    if hasattr(arduino, 'is_connected') and arduino.is_connected:
-                        st.success("✅ 데이터 수신 중", icon="📡")
+                # 선택된 배수지 상태 초기화
+                if 'selected_reservoir' not in st.session_state:
+                    st.session_state.selected_reservoir = 'gagok'
+                
+                # 버튼 클릭 처리
+                if gagok_btn:
+                    st.session_state.selected_reservoir = 'gagok'
+                elif haeryong_btn:
+                    st.session_state.selected_reservoir = 'haeryong'
+                elif sangsa_btn:
+                    st.session_state.selected_reservoir = 'sangsa'
+                
+                # synergy 데이터베이스의 water 테이블에서만 데이터 가져오기
+                try:
+                    from tools.water_level_monitoring_tool import water_level_monitoring_tool
+                    
+                    # 오직 실제 water 테이블의 데이터만 조회 (샘플 데이터 생성 안함)
+                    current_status = water_level_monitoring_tool(action='current_status')
+                    
+                    if current_status.get('success'):
+                        reservoirs = current_status.get('reservoirs', [])
+                        selected_res = st.session_state.selected_reservoir
+                        
+                        # 선택된 배수지 정보 찾기
+                        selected_data = None
+                        for res in reservoirs:
+                            if res.get('reservoir_id') == selected_res:
+                                selected_data = res
+                                break
+                        
+                        if selected_data:
+                            # 수위 그래프 표시
+                            level = selected_data.get('current_level', 0)
+                            max_level = 120  # 최대 표시 수위
+                            level_percent = min(100, (level / max_level) * 100)
+                            
+                            # 상태별 색상 설정
+                            status = selected_data.get('status', 'UNKNOWN')
+                            if status == 'CRITICAL':
+                                color = '#dc2626'  # 빨간색
+                            elif status == 'WARNING':
+                                color = '#f59e0b'  # 주황색
+                            else:
+                                color = '#3b82f6'  # 파란색
+                            
+                            # 날짜 정보 추출 (연월일 시분초까지 전체 표시)
+                            last_update = selected_data.get('last_update', '')
+                            try:
+                                from datetime import datetime
+                                if 'T' in last_update:
+                                    update_dt = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
+                                else:
+                                    update_dt = datetime.strptime(last_update, '%Y-%m-%d %H:%M:%S')
+                                date_display = update_dt.strftime('%Y-%m-%d %H:%M:%S')
+                            except:
+                                date_display = last_update if last_update else '날짜 불명'
+                            
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(to top, {color} {level_percent}%, #e5e7eb {level_percent}%); 
+                                       height: 80px; border-radius: 8px; position: relative; margin: 8px 0;
+                                       border: 2px solid {color}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                                           color: white; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 2px rgba(0,0,0,0.7);">
+                                    {level:.1f}cm ({level_percent:.0f}%)
+                                </div>
+                                <div style="position: absolute; top: 5px; left: 8px; color: white; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.7);">
+                                    {selected_data.get('reservoir', '').replace(' 배수지', '')}
+                                </div>
+                                <div style="position: absolute; top: 5px; right: 8px; color: white; font-size: 10px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.7);">
+                                    {status}
+                                </div>
+                                <div style="position: absolute; bottom: 3px; left: 8px; color: white; font-size: 9px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); opacity: 0.95; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 3px;">
+                                    📅 {date_display}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # 펌프 상태 표시
+                            st.markdown("**💨 펌프 상태**")
+                            pump_statuses = selected_data.get('pump_statuses', {})
+                            active_pumps = selected_data.get('active_pumps', 0)
+                            total_pumps = selected_data.get('total_pumps', 0)
+                            
+                            if pump_statuses:
+                                pump_cols = st.columns(len(pump_statuses))
+                                for i, (pump_name, is_active) in enumerate(pump_statuses.items()):
+                                    with pump_cols[i]:
+                                        pump_display_name = pump_name.replace('pump_', '펌프 ').upper()
+                                        if is_active:
+                                            st.success(f"🟢 {pump_display_name}", icon="⚡")
+                                        else:
+                                            st.info(f"⚪ {pump_display_name}", icon="⏸️")
+                            
+                            # 요약 정보
+                            st.markdown(f"**📊 요약:** {active_pumps}/{total_pumps} 펌프 가동 중")
+                        else:
+                            st.warning("선택된 배수지 데이터를 찾을 수 없습니다.")
                     else:
-                        st.warning("⏳ 상태 수집 대기...", icon="🔄")
-                else:
-                    st.info("⏳ 상태 수집 대기...", icon="🔄")
+                        st.error("📊 synergy 데이터베이스의 water 테이블에 데이터가 없습니다.")
+                        st.info("💡 데이터베이스에 수위 데이터를 추가한 후 새로고침해주세요.")
+                        
+                        # 개발/테스트 편의를 위한 샘플 데이터 생성 버튼 (선택적)
+                        if st.button("🔧 테스트용 샘플 데이터 생성", key="create_sample_data"):
+                            try:
+                                sample_result = water_level_monitoring_tool(action='add_sample_data')
+                                if sample_result.get('success'):
+                                    st.success("✅ 테스트용 샘플 데이터 생성 완료!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"샘플 데이터 생성 실패: {sample_result.get('error')}")
+                            except Exception as e:
+                                st.error(f"샘플 데이터 생성 오류: {str(e)}")
+                        
+                except Exception as e:
+                    logger.error(f"수위 모니터링 오류: {str(e)}")
+                    st.error(f"모니터링 시스템 오류: {str(e)}")
+                
+                # 새로고침 버튼 (실제 데이터베이스 재조회)
+                if st.button("🔄 새로고침", use_container_width=True, key="refresh_water"):
+                    st.rerun()
+                    
+                # 그래프 생성 버튼 (시간 범위 표시 포함)
+                if st.button("📊 24시간 그래프", use_container_width=True, key="show_graph"):
+                    try:
+                        graph_result = water_level_monitoring_tool(action='generate_graph', hours=24)
+                        if graph_result.get('success'):
+                            time_range = graph_result.get('time_range_display', '24시간')
+                            st.success(f"📊 그래프 생성 완료!\n📅 시간 범위: {time_range}")
+                            if 'image_base64' in graph_result:
+                                import base64
+                                image_data = base64.b64decode(graph_result['image_base64'])
+                                st.image(image_data, 
+                                        caption=f"📊 배수지 수위 변화 ({time_range})", 
+                                        use_column_width=True)
+                        else:
+                            st.error(f"그래프 생성 실패: {graph_result.get('error')}")
+                    except Exception as e:
+                        st.error(f"그래프 생성 오류: {str(e)}")
+                        
             else:
                 st.info("시스템 초기화 후 표시됩니다.")
 

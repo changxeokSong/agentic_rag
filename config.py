@@ -40,7 +40,7 @@ TIMEOUT = int(os.getenv("TIMEOUT", "30"))
 
 DATABASE_NAME = os.getenv("DATABASE_NAME", "document")
 
-ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor").split(",")
+ENABLED_TOOLS = os.getenv("ENABLED_TOOLS", "vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor,water_level_monitoring_tool").split(",")
 
 # PostgreSQL configuration
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")
@@ -172,6 +172,28 @@ def get_available_functions():
                 },
                 "required": ["action"]
             }
+        },
+        {
+            "name": "water_level_monitoring_tool",
+            "description": "synergy 데이터베이스의 water 테이블을 활용한 수위 모니터링 시스템입니다. 가곡, 해룡, 상사 배수지의 실시간 상태 조회, 과거 데이터 분석, 그래프 생성이 가능합니다. 모든 데이터는 measured_at 컬럼을 기준으로 합니다.\n현재 상태: '수위 현황 보여줘', '저수지 상태 확인'\n그래프 생성: '수위 그래프 그려줘', '24시간 수위 변화 보여줘'\n과거 데이터: '지난 12시간 수위 데이터 조회'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["current_status", "historical_data", "generate_graph", "add_sample_data"],
+                        "description": "실행할 액션 (current_status: 현재 상태 조회, historical_data: 과거 데이터 조회, generate_graph: 그래프 생성, add_sample_data: 테스트 데이터 추가)"
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": "조회할 시간 범위 (시간 단위, 기본값: 24시간)",
+                        "minimum": 1,
+                        "maximum": 168,
+                        "default": 24
+                    }
+                },
+                "required": ["action"]
+            }
         }
     ]
     
@@ -185,16 +207,16 @@ def generate_function_selection_prompt():
     """활성화된 도구에 따라 프롬프트 템플릿 생성"""
     base_prompt = (
         "사용자 요청을 분석하여 적합한 도구를 선택하고 JSON 형식으로만 응답하세요.\n\n"
-        "**핵심 규칙:**\n"
-        "1. 사용자 의도 파악 후 필요한 도구와 인자 선택\n"
-        "2. 펌프 제어('펌프1/2 켜줘/꺼줘') → arduino_water_sensor 필수 사용\n"
-        "3. 여러 도구 필요시 모두 포함\n"
-        "4. 일반 대화/인사 → 빈 배열 `[]`\n"
-        "5. 오직 JSON 배열만 응답\n\n"
-        "**응답 형식:**\n"
+        "**핵심 규칙** ✍️\n"
+        "1) 사용자 의도를 파악한 뒤 필요한 도구와 인자를 정확히 선택하세요.\n"
+        "2) 펌프 제어(‘펌프1/2 켜줘·꺼줘’)는 반드시 arduino_water_sensor를 사용하세요.\n"
+        "3) 여러 도구가 필요하면 모두 포함하세요(복합 요청 허용).\n"
+        "4) 일반 대화/인사 → 빈 배열 `[]`.\n"
+        "5) 출력은 오직 JSON 배열만. 설명/이모지/추가 텍스트 금지.\n\n"
+        "**응답 형식** 🧩\n"
         "- 도구 사용: `[{\"name\": \"도구명\", \"arguments\": {\"인자\": \"값\"}}]`\n"
         "- 도구 불필요: `[]`\n\n"
-        "**사용 가능한 도구:**\n"
+        "**사용 가능한 도구** 🛠️\n"
     )
     
     tools_desc = []
@@ -204,7 +226,7 @@ def generate_function_selection_prompt():
 
     # 더 복합적이고 현실적인 예시를 추가하여 LLM의 이해도를 높임
     example_prompt = """
-**## 주요 예시**
+**## 주요 예시** 📚
 - 일반 대화: "안녕? 오늘 기분 어때?" → `[]`
 - 단순 문서 검색: "지난 분기 보고서에서 매출 관련 내용 찾아줘" → `[{"name": "vector_search_tool", "arguments": {"query": "지난 분기 매출"}}]`
 - 조건부 문서 검색: "'프로젝트A_결과보고서.pdf' 파일에서 '핵심 성과' 부분 상위 5개만 요약해줘" → `[{"name": "vector_search_tool", "arguments": {"query": "핵심 성과 요약", "file_filter": "프로젝트A_결과보고서.pdf", "top_k": 5}}]`
@@ -215,37 +237,57 @@ def generate_function_selection_prompt():
 - 펌프 제어: "펌프2 꺼줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump2_off"}}]`
 - 펌프 상태: "펌프 상태 확인해줘" → `[{"name": "arduino_water_sensor", "arguments": {"action": "pump_status"}}]`
 - 수위 예측: "앞으로 3시간 동안의 수위를 예측해줄래?" → `[{"name": "water_level_prediction_tool", "arguments": {"prediction_hours": 3}}]`
+- 수위 모니터링: "저수지 현황 보여줘" → `[{"name": "water_level_monitoring_tool", "arguments": {"action": "current_status"}}]`
+- 수위 그래프: "24시간 수위 그래프 생성해줘" → `[{"name": "water_level_monitoring_tool", "arguments": {"action": "generate_graph", "hours": 24}}]`
 - 복합 요청: "'운영 매뉴얼' 문서를 참고해서 현재 수위를 확인하고, 펌프 2번을 켜줘" → `[{"name": "vector_search_tool", "arguments": {"query": "펌프 2번 제어 방법", "file_filter": "운영 매뉴얼"}}, {"name": "arduino_water_sensor", "arguments": {"action": "pump2_on"}}]`
 
-**## 핵심 키워드 매칭**
-- 펌프 관련: "펌프1", "펌프2", "pump1", "pump2", "켜줘", "꺼줘", "가동", "정지", "펌프 상태"
-- 수위 관련: "수위", "물위", "현재 수위", "수위 측정", "물 높이", "아두이노 수위"
-- 예측 관련: "예측", "미래", "앞으로", "시간 후", "분 후"
+**## 키워드 힌트** 🧠
+- 펌프: "펌프1", "펌프2", "pump1", "pump2", "켜줘", "꺼줘", "가동", "정지", "펌프 상태"
+- 수위: "수위", "물위", "현재 수위", "수위 측정", "물 높이", "아두이노 수위"
+- 예측: "예측", "미래", "앞으로", "시간 후", "분 후"
+- 모니터링: "현황", "상태", "저수지", "모니터링", "실시간", "그래프", "차트", "시각화"
 
 **## 사용자 질문**
-사용자 질문을 분석하여 위의 규칙과 예시에 따라 JSON 배열로 응답하세요:"""
+사용자 질문을 분석하여 위의 규칙과 예시에 따라 JSON 배열로 응답하세요: """
 
     return base_prompt + "\n".join(tools_desc) + "\n" + example_prompt
 
 # 도구 선택 프롬프트
 FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
-# 응답 생성 프롬프트 (간소화)
+# 응답 생성 프롬프트 (가독성/이모지/도구-근거 강화)
 RESPONSE_GENERATION_PROMPT = """
-다음 정보를 바탕으로 한국어로 간결하고 명확한 마크다운 답변을 작성하세요.
+다음 정보를 바탕으로 한국어로 보기 좋은 마크다운 답변을 작성하세요. 이모지(😊, ✅, 🔎 등)를 적절히 사용해 가독성을 높이되, 과도하게 남용하지 마세요.
 
-규칙:
-- 도구 결과가 없으면: 일반 대화에 맞게 짧고 공손한 답변만 작성하고, 섹션/표/상태 요약을 만들지 마세요.
-- 도구 결과가 있으면: 질문과 가장 관련 있는 핵심 결과만 요약하세요. 불필요한 템플릿(작업 결과/추가 조치/완료 메시지)은 넣지 마세요.
-- HTML 태그나 마크다운 코드 블록(```)은 사용하지 말고, 순수 텍스트로만 답변하세요.
-- 알 수 없거나 데이터가 부족하면 솔직하게 부족하다고 말하고, 가능한 다음 조치를 간단히 제안하세요.
+원칙:
+- **중요**: 도구 결과가 있으면 반드시 도구 결과에만 근거해 답변하세요. 실제 결과와 다른 내용을 추정하거나 임의로 생성하는 것을 절대 금지합니다.
+- 도구에서 오류나 실패가 발생한 경우: 실제 오류 메시지를 그대로 전달하고, 성공했다고 거짓 정보를 제공하지 마세요.
+- 도구 결과가 부족하거나 없으면: "부족한 정보"를 명시하고, 다음 행동 제안을 간단히 제시하세요.
+- 구성 권장(필요한 경우):
+  - 제목/한 줄 요약 ✨
+  - 핵심 답변 ✅
+  - 근거/출처 🔎: 결과에 출처 필드(file_id 등)가 있을 때만 표기하세요. 없으면 생략하세요.
+  - 다음 단계 ➡️ (선택)
+- 벡터 검색 결과는 상위 3~5개만 요약하고, 중복 내용은 병합하세요. 각 항목은 1-2문장으로 간결하게.
+- 수치 단위는 원 단위를 유지하고, 반올림/범위를 표기하세요(필요 시).
+- **Arduino 도구 결과 처리**: 여러 Arduino 도구가 실행된 경우, 각 도구의 결과를 모두 포함하세요. 펌프 제어, 수위 측정, 연결 상태 등 모든 작업 결과를 섹션별로 정리하세요. 실패한 작업은 실패라고 명확히 표시하세요.
+- **환상(Hallucination) 방지**: 도구에서 "success": false가 반환된 경우, 절대로 성공했다고 답변하지 마세요. 실제 오류 내용을 사용자에게 전달하세요.
+- HTML 금지. 마크다운 허용. **중요**: 코드 블록(```)을 절대 사용하지 마세요. 모든 내용은 일반 마크다운 형식(제목, 불릿, 강조)으로만 작성하세요.
+- 표가 유리하면 마크다운 표 사용을 허용합니다.
+  - 표를 작성할 때는 올바른 마크다운 표 형태를 사용하세요. 헤더 행 다음에 구분선(| --- | --- |)을 반드시 포함하세요. 표 작성이 애매하면 글머리표 목록으로 대체하세요.
+
+표/라벨 지침:
+- 테이블 헤더/라벨은 한국어로 표기하세요. 예: "파일 이름", "크기(MB)", "업로드 시간".
+- 도구 결과의 영문 키 이름(filename, size_mb, upload_date 등)은 사용자에게 보여줄 때 한국어로 바꾸어 표기하세요.
+- "출처"는 실제 출처 정보가 있을 때만 작성합니다. 임의의 플레이스홀더(예: list_files_tool_result)는 사용하지 마세요.
+- vector_search_tool을 사용했다면 "출처" 섹션에는 데이터베이스에서 반환된 파일 이름들을 표기하세요(중복 제거).
 
 입력:
 - 사용자 질문: {user_query}
-- 도구 결과: {tool_results}
+- 도구 결과(JSON): {tool_results}
 
-출력:
-- 최대한 간단한 일반 텍스트 (마크다운 구문 없이)
+출력 형식:
+- 마크다운 텍스트(제목, 목록, 표 등 허용). 과한 장식은 피하고, 정확성과 근거 제시를 우선하세요.
 """
 
 def print_config():

@@ -3,6 +3,7 @@
 from config import FUNCTION_SELECTION_PROMPT, AVAILABLE_FUNCTIONS
 from utils.logger import setup_logger
 import json
+import re
 
 logger = setup_logger(__name__)
 
@@ -31,7 +32,13 @@ class QueryAnalyzer:
         
         # 2. 규칙으로 해결되지 않는 경우 LLM 사용
         logger.info("규칙 기반 매칭 실패, LLM 분석 시도")
-        return self._llm_based_analysis(query)
+        llm_result = self._llm_based_analysis(query)
+        if llm_result:
+            return llm_result
+
+        # 3. LLM도 도구를 선택하지 않은 경우: 일반 대화로 처리
+        logger.info("LLM 분석에서도 도구 미선택 → 일반 대화로 처리")
+        return None
     
     def _rule_based_analysis(self, query):
         """규칙 기반 도구 선택 - 복합 요청 지원"""
@@ -106,6 +113,31 @@ class QueryAnalyzer:
                         selected_tools.extend(pattern_data["tools"])
                         break  # 패턴당 하나의 키워드만 매칭되면 충분
         
+        # 추가 규칙: 수위 예측 의도 정규식 매칭 (시간/분 + 뒤/후 + 수위 + 예측/예상 등)
+        try:
+            time_hours_match = re.search(r"(\d+)\s*시간\s*(뒤|후)", query_lower)
+            time_minutes_match = re.search(r"(\d+)\s*분\s*(뒤|후)", query_lower)
+            has_water_and_predict = ("수위" in query_lower) and ("예측" in query_lower or "예상" in query_lower)
+            time_and_water = (
+                (time_hours_match is not None or time_minutes_match is not None) and ("수위" in query_lower)
+            )
+
+            if has_water_and_predict or time_and_water:
+                args = {}
+                if time_hours_match:
+                    hours = int(time_hours_match.group(1))
+                    # 시간 기반 인자 제공
+                    args["prediction_hours"] = hours
+                    args["time_horizon"] = {"hours": hours}
+                elif time_minutes_match:
+                    minutes = int(time_minutes_match.group(1))
+                    args["time_horizon"] = {"minutes": minutes}
+                selected_tools.append({"name": "water_level_prediction_tool", "arguments": args})
+                matched_patterns.append("수위_예측_정규식")
+        except Exception:
+            # 정규식 처리 중 오류가 나더라도 전체 흐름에는 영향 주지 않음
+            pass
+
         # 매칭된 패턴이 있으면 반환
         if selected_tools:
             # 중복 제거 (같은 도구가 중복으로 선택될 수 있음)

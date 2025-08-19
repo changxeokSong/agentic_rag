@@ -47,7 +47,14 @@ class Orchestrator:
                 logger.info(f"도구 실행 결과: {result}")
                 
                 # 같은 도구가 여러 번 호출될 수 있으므로 키를 고유하게 만듦
-                result_key = f"{tool_name}_{i}" if f"{tool_name}_0" in tool_results else tool_name
+                # 첫 번째 호출은 도구명 그대로, 이후는 _1, _2, ... 형태로
+                base_key = tool_name
+                result_key = base_key
+                counter = 0
+                while result_key in tool_results:
+                    counter += 1
+                    result_key = f"{base_key}_{counter}"
+                
                 tool_results[result_key] = result
         else:
             logger.info("도구가 선택되지 않음 - 일반 대화로 처리")
