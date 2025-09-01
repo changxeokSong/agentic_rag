@@ -78,6 +78,10 @@ void loop() {
     else if (command == "PUMP_STATUS") {
       sendStatus();
     }
+    // 연결 테스트를 위한 PING 명령 처리
+    else if (command == "PING") {
+      SERIAL.println("PONG");
+    }
   }
 }
 

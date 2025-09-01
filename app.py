@@ -490,7 +490,7 @@ def main():
                         arduino_color = "#3b82f6"
                 
                 st.markdown(f"**모델**: `{model_info.get('model', '-')}`")
-                st.markdown(f"**API**: {'<span style="color: #16a34a;">✅ 연결됨</span>' if api_ok else '<span style="color: #dc2626;">❌ 연결 안됨</span>'}", unsafe_allow_html=True)
+                st.markdown(f"""**API**: {'<span style="color: #16a34a;">✅ 연결됨</span>' if api_ok else '<span style="color: #dc2626;">❌ 연결 안됨</span>'}""", unsafe_allow_html=True)
                 st.markdown(f"**아두이노**: <span style='color: {arduino_color};'>{arduino_status}</span>", unsafe_allow_html=True)
 
             else:

@@ -278,52 +278,65 @@ class ArduinoWaterSensorTool:
             
             # Arduino Mega 2560 부팅 완료 대기
             logger.info("Arduino Mega 2560 부팅 완료 대기 중...")
-            time.sleep(2)
+            time.sleep(1)  # 대기 시간 단축
             
-            # 핑 테스트 명령 전송
-            try:
-                self.serial_connection.write(b"PING\n")
-                self.serial_connection.flush()
-                logger.info("PING 명령 전송됨")
-                time.sleep(1)
-            except Exception as e:
-                logger.error(f"PING 명령 전송 실패: {e}")
-                return False
+            # 핑 테스트 명령 전송 (3회 시도)
+            for attempt in range(3):
+                try:
+                    self.serial_connection.write(b"PING\n")
+                    self.serial_connection.flush()
+                    logger.info(f"PING 명령 전송됨 (시도 {attempt + 1}/3)")
+                    
+                    # PONG 응답 대기 (5초)
+                    start_time = time.time()
+                    while (time.time() - start_time) < 5:
+                        if self.serial_connection.in_waiting > 0:
+                            try:
+                                data = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
+                                if data:
+                                    logger.info(f"Arduino 응답: {data}")
+                                    # PONG 응답 확인
+                                    if 'PONG' in data.upper():
+                                        logger.info("✅ PING-PONG 응답 확인됨!")
+                                        return True
+                                    # 다른 유효한 데이터도 연결 성공으로 간주
+                                    elif any(keyword in data.lower() for keyword in ['water', 'level', 'pump', 'ack', 'ready']):
+                                        logger.info("✅ Arduino 응답 확인됨!")
+                                        return True
+                            except Exception as e:
+                                logger.debug(f"데이터 읽기 중 오류: {e}")
+                                continue
+                        time.sleep(0.1)
+                    
+                    # 다음 시도 전 잠시 대기
+                    if attempt < 2:
+                        time.sleep(0.5)
+                        
+                except Exception as e:
+                    logger.error(f"PING 명령 전송 실패 (시도 {attempt + 1}): {e}")
+                    if attempt < 2:
+                        time.sleep(0.5)
+                    continue
             
-            # 수위 센서 데이터 수신 대기 (최대 10초)
-            data_received = False
+            # PING 실패 시 일반 데이터 수신 확인
+            logger.info("PING 테스트 실패, 일반 데이터 수신 확인 중...")
             start_time = time.time()
-            while (time.time() - start_time) < 10:
+            while (time.time() - start_time) < 5:
                 if self.serial_connection.in_waiting > 0:
                     try:
                         data = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
                         if data:
-                            logger.info(f"Arduino Mega 2560에서 데이터 수신: {data}")
-                            data_received = True
-                            # PONG 응답 확인
-                            if 'PONG' in data.upper():
-                                logger.info("✅ PING-PONG 응답 확인됨!")
+                            logger.info(f"일반 데이터 수신: {data}")
+                            if len(data) > 0:  # 어떤 데이터든 수신되면 연결됨으로 간주
+                                logger.info("✅ Arduino 데이터 수신 확인됨!")
                                 return True
-                            # 수위 데이터 형식 확인
-                            elif 'water level' in data.lower() or '%' in data or 'level' in data.lower():
-                                logger.info("✅ 수위 센서 데이터 확인됨!")
-                                return True
-                            else:
-                                logger.info("Arduino에서 데이터 수신 확인")
                     except Exception as e:
                         logger.debug(f"데이터 읽기 중 오류: {e}")
                         continue
-                
                 time.sleep(0.1)
             
-            # 실제 데이터가 수신되지 않으면 연결 실패로 간주
-            if not data_received:
-                logger.warning("Arduino에서 데이터가 수신되지 않았습니다. 연결이 올바르지 않을 수 있습니다.")
-                return False
-            else:
-                # 데이터는 수신되었지만 예상 형식이 아닌 경우
-                logger.info("Arduino 연결 확인됨 (비표준 데이터)")
-                return True
+            logger.warning("Arduino에서 데이터가 수신되지 않았습니다. 연결이 올바르지 않을 수 있습니다.")
+            return False
             
         except Exception as e:
             logger.error(f"Arduino Mega 2560 연결 테스트 실패: {e}")
