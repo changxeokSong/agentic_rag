@@ -78,48 +78,27 @@ class DirectArduinoComm:
                 com_port = f"COM{i}"
                 try:
                     test_serial = serial.Serial(com_port, 115200, timeout=0.5)
-                    
-                    # 실제 아두이노인지 확인하기 위한 간단한 테스트
-                    test_serial.write(b"PING\n")
-                    test_serial.flush()
-                    time.sleep(0.2)
-                    
-                    # 응답이 있는지 확인 (아두이노가 아닌 다른 장치 제외)
-                    if test_serial.in_waiting > 0:
-                        response = test_serial.read(test_serial.in_waiting)
-                        test_serial.close()
-                        logger.info(f"Windows COM{i} 아두이노 연결 성공! 응답: {response}")
-                        return com_port
-                    else:
-                        # 응답이 없으면 아두이노가 아닐 가능성이 높음
-                        test_serial.close()
-                        logger.debug(f"COM{i}에서 응답 없음 (아두이노 아님)")
-                        continue
+                    test_serial.close()
+                    # 포트 연결만 확인하고 PING 테스트는 실제 연결 시에 1회만 수행
+                    logger.info(f"Windows COM{i} 포트 연결 가능")
+                    return com_port
                 except Exception as e:
                     logger.debug(f"COM{i} 연결 실패: {e}")
                     continue
         
-        # pyserial 포트 스캔에서도 실제 아두이노 확인
+        # pyserial 포트 스캔 (연결만 확인)
         ports = serial.tools.list_ports.comports()
         for port in ports:
             try:
                 test_serial = serial.Serial(port.device, 115200, timeout=0.5)
-                
-                # 실제 아두이노인지 확인하기 위한 간단한 테스트
-                test_serial.write(b"PING\n")
-                test_serial.flush()
-                time.sleep(0.2)
-                
-                # 응답이 있는지 확인
-                if test_serial.in_waiting > 0:
-                    response = test_serial.read(test_serial.in_waiting)
-                    test_serial.close()
-                    logger.info(f"포트 {port.device} 아두이노 연결 성공! 응답: {response}")
+                test_serial.close()
+                # 아두이노 디스크립션 확인 (선택적)
+                if 'Arduino' in port.description or 'USB' in port.description:
+                    logger.info(f"포트 {port.device} 아두이노 장치로 추정됨: {port.description}")
                     return port.device
                 else:
-                    test_serial.close()
-                    logger.debug(f"{port.device}에서 응답 없음 (아두이노 아님)")
-                    continue
+                    logger.info(f"포트 {port.device} 연결 가능: {port.description}")
+                    return port.device
             except Exception as e:
                 logger.debug(f"포트 {port.device} 연결 실패: {e}")
                 continue
@@ -194,6 +173,21 @@ class DirectArduinoComm:
             
             # 연결 안정화 대기
             time.sleep(2)
+            
+            # 연결 성공 시 1회만 PING 테스트 수행
+            try:
+                self.serial_connection.write(b"PING\n")
+                self.serial_connection.flush()
+                time.sleep(0.3)
+                
+                if self.serial_connection.in_waiting > 0:
+                    response = self.serial_connection.read(self.serial_connection.in_waiting)
+                    logger.info(f"아두이노 응답 확인: {response.decode('utf-8', errors='ignore').strip()}")
+                else:
+                    logger.info("아두이노 PING 응답 없음 (정상적일 수 있음)")
+            except Exception as e:
+                logger.warning(f"PING 테스트 실패 (연결은 유지됨): {e}")
+            
             self.arduino_port = port
             logger.info(f"아두이노 연결 성공: {port}")
             return True

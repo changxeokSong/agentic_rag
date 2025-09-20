@@ -65,15 +65,20 @@ class ResponseGenerator:
         filtered_results = filter_tool_results_for_llm(tool_results)
         formatted_results = format_tool_results(filtered_results)
         
-        # 프롬프트 구성 (도구 결과가 있을 때에만 상태/섹션 가이드 사용)
-        prompt = RESPONSE_GENERATION_PROMPT.format(
-            user_query=user_query,
-            tool_results=formatted_results
+        # 프롬프트 구성: 반드시 검색된 content만 근거로 답변하도록 강제
+        retrieval_guard_prompt = (
+            "아래의 '도구 결과'에 포함된 content 텍스트만을 근거로 한국어 답변을 작성하세요.\n"
+            "- 도구 결과 외 추정/지식/환상 금지.\n"
+            "- 결과가 없거나 부족하면 '근거 부족으로 답변 불가'라고 말하고, 다음 행동(예: 더 구체적 질문, 파일 업로드)을 제안하세요.\n"
+            "- 표기: 간결한 문장/불릿만, 코드블록 금지.\n"
+            "- 'score'는 pgvector L2 거리이며 값이 낮을수록 유사도가 높음을 함께 설명하세요.\n\n"
+            f"사용자 질문: {user_query}\n\n"
+            f"도구 결과(JSON 요약):\n{formatted_results}"
         )
         
         # 응답 생성
         try:
-            response = self.lm_studio_client.generate_response(prompt)
+            response = self.lm_studio_client.generate_response(retrieval_guard_prompt)
             
             # 응답 후처리: 양끝 따옴표 제거 및 표 정규화
             response = clean_ai_response(response)

@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: synergy-postgres
+    environment:
+      POSTGRES_USER: ${PG_DB_USER:-synergy}
+      POSTGRES_PASSWORD: ${PG_DB_PASSWORD:-synergy}
+      POSTGRES_DB: ${PG_DB_NAME:-synergy}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: synergy-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PG_DB_HOST: postgres
+      PG_DB_PORT: 5432
+    command: ["/bin/sh", "scripts/entrypoint-backend.sh"]
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+  frontend:
+    build: .
+    container_name: synergy-frontend
+    depends_on:
+      backend:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      PG_DB_HOST: postgres
+      PG_DB_PORT: 5432
+    command: ["/bin/sh", "scripts/entrypoint-frontend.sh"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+

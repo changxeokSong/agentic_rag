@@ -12,6 +12,7 @@ from config import (
 # 필요한 Langchain 컴포넌트 및 임베딩 모델 임포트
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings # OpenAIEmbeddings 임포트
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader # 파일 내용 로딩용
 import tempfile
 from bson.objectid import ObjectId # ObjectId 처리가 더 이상 필요 없을 수 있으나, 마이그레이션 과정에서 필요할 수도 있으므로 남겨둡니다.
@@ -126,11 +127,24 @@ class PostgreSQLStorage:
             self._cursor = self._connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             logger.info("PostgreSQL 연결 성공!")
             
-            # Embedding 모델 로드 (config에서 모델 이름 가져오기)
+            # Embedding 모델 로드 (config에서 모델 이름/백엔드 가져오기)
             try:
-                # config에서 임베딩 모델 이름과 API 키 환경 변수 이름 가져와 사용
-                self.embedding_model = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME, openai_api_key=openai_api_key)
-                logger.info(f"Embedding 모델 로드 성공: {EMBEDDING_MODEL_NAME}.")
+                from config import EMBEDDING_BACKEND, EMBEDDING_DEVICE, HUGGINGFACEHUB_API_TOKEN
+                if EMBEDDING_BACKEND == "HF":
+                    model_name = EMBEDDING_MODEL_NAME or "dragonkue/BGE-m3-ko"
+                    # dragonkue/BGE-m3-ko는 BGE 계열(1024차원)로 추정
+                    hf_kwargs = {
+                        "model_name": model_name,
+                        "model_kwargs": {"device": EMBEDDING_DEVICE},
+                    }
+                    if HUGGINGFACEHUB_API_TOKEN:
+                        os.environ["HUGGINGFACEHUB_API_TOKEN"] = HUGGINGFACEHUB_API_TOKEN
+                    self.embedding_model = HuggingFaceEmbeddings(**hf_kwargs)
+                    logger.info(f"HF Embedding 모델 로드 성공: {model_name} (device={EMBEDDING_DEVICE}).")
+                else:
+                    # OPENAI 기본
+                    self.embedding_model = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME, openai_api_key=openai_api_key)
+                    logger.info(f"OpenAI Embedding 모델 로드 성공: {EMBEDDING_MODEL_NAME}.")
             except Exception as e:
                 logger.error(f"Embedding 모델 로드 오류 ({EMBEDDING_MODEL_NAME}): {e}")
                 self.embedding_model = None # 모델 로드 실패 시 None으로 설정

@@ -207,12 +207,15 @@ class WaterLevelPredictionTool:
         logger.warning("텍스트에서 유효한 수위 데이터를 찾을 수 없습니다")
         return None
     
-    def execute(self, water_levels=None, dataPoints=None, data=None, prediction_steps=None, prediction_hours=None, time_horizon=None, **kwargs):
+    def execute(self, water_levels=None, dataPoints=None, data=None, prediction_steps=None, prediction_hours=None, time_horizon=None, query=None, analysis_type=None, **kwargs):
         """수위 예측 실행 래퍼 (간소화)
 
         - 지원 인자 별칭:
           - water_levels ≡ dataPoints ≡ data
           - prediction_steps ≡ futureTimeSteps ≡ steps
+        - 새로운 기능:
+          - query: 자연어 질의를 통한 예측 요청
+          - analysis_type: 예측 분석 유형 ('trend', 'comparison', 'alert' 등)
         """
         # 별칭 매핑 처리
         if prediction_steps is None:
@@ -220,7 +223,21 @@ class WaterLevelPredictionTool:
             if isinstance(alias_steps, (int, float)):
                 prediction_steps = int(alias_steps)
 
-        return self._predict_water_level(water_levels, dataPoints, data, prediction_steps, prediction_hours, time_horizon, **kwargs)
+        # 자연어 질의 처리
+        if query and not time_horizon:
+            time_horizon = self._parse_time_from_query(query)
+        
+        # 분석 유형별 특별 처리
+        if analysis_type:
+            kwargs['analysis_type'] = analysis_type
+            
+        result = self._predict_water_level(water_levels, dataPoints, data, prediction_steps, prediction_hours, time_horizon, **kwargs)
+        
+        # 분석 유형에 따른 결과 후처리
+        if analysis_type and isinstance(result, dict) and 'predictions' in result:
+            result = self._enhance_prediction_with_analysis(result, analysis_type, query)
+            
+        return result
     
     # 불필요한 도구 설정 스키마는 제거하여 단순화
     
@@ -414,6 +431,148 @@ class WaterLevelPredictionTool:
         except Exception as e:
             logger.error(f"모델 정보 조회 오류: {str(e)}")
             return {"error": f"모델 정보 조회 중 오류가 발생했습니다: {str(e)}"}
+    
+    def _parse_time_from_query(self, query: str) -> dict:
+        """질의에서 시간 정보 파싱"""
+        if not query:
+            return None
+            
+        import re
+        query_lower = query.lower()
+        
+        # 시간 패턴 매칭
+        patterns = [
+            (r'(\d+)\s*시간\s*(뒤|후|이후)', lambda m: {'hours': int(m.group(1))}),
+            (r'(\d+)\s*분\s*(뒤|후|이후)', lambda m: {'minutes': int(m.group(1))}),
+            (r'(\d+)\s*일\s*(뒤|후|이후)', lambda m: {'days': int(m.group(1))}),
+            (r'내일', lambda m: {'tomorrow': True}),
+            (r'다음날', lambda m: {'tomorrow': True}),
+        ]
+        
+        for pattern, extractor in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                return extractor(match)
+                
+        return None
+    
+    def _enhance_prediction_with_analysis(self, result: dict, analysis_type: str, query: str = None) -> dict:
+        """분석 유형에 따른 예측 결과 개선"""
+        if not isinstance(result, dict) or 'predictions' not in result:
+            return result
+            
+        predictions = result['predictions']
+        input_data = result.get('input_data', [])
+        
+        try:
+            if analysis_type == 'trend':
+                # 트렌드 분석 추가
+                result['trend_analysis'] = self._analyze_prediction_trend(predictions, input_data)
+                
+            elif analysis_type == 'comparison':
+                # 비교 분석 추가 (입력 데이터와 예측 비교)
+                result['comparison_analysis'] = self._compare_prediction_with_input(predictions, input_data)
+                
+            elif analysis_type == 'alert':
+                # 경고 시점 분석
+                result['alert_analysis'] = self._analyze_alert_timing(predictions, input_data)
+                
+            # 공통 통계 추가
+            if len(predictions) > 1:
+                result['prediction_statistics'] = {
+                    'mean': np.mean(predictions),
+                    'std': np.std(predictions),
+                    'min': np.min(predictions),
+                    'max': np.max(predictions),
+                    'variance': np.var(predictions)
+                }
+                
+        except Exception as e:
+            logger.warning(f"예측 결과 분석 중 오류: {e}")
+            
+        return result
+    
+    def _analyze_prediction_trend(self, predictions: list, input_data: list) -> dict:
+        """예측 트렌드 분석"""
+        if len(predictions) < 2:
+            return {'trend': 'insufficient_data'}
+            
+        # 선형 회귀로 트렌드 계산
+        x = np.arange(len(predictions))
+        y = np.array(predictions)
+        
+        if len(x) > 1:
+            slope = np.polyfit(x, y, 1)[0]
+            
+            trend_desc = 'stable'
+            if slope > 0.1:
+                trend_desc = 'increasing'
+            elif slope < -0.1:
+                trend_desc = 'decreasing'
+                
+            return {
+                'trend': trend_desc,
+                'slope': float(slope),
+                'rate_of_change': float(slope * len(predictions)),
+                'trend_strength': abs(float(slope))
+            }
+            
+        return {'trend': 'unknown'}
+    
+    def _compare_prediction_with_input(self, predictions: list, input_data: list) -> dict:
+        """예측과 입력 데이터 비교"""
+        if not input_data or not predictions:
+            return {'comparison': 'insufficient_data'}
+            
+        input_mean = np.mean(input_data[-10:]) if len(input_data) >= 10 else np.mean(input_data)
+        pred_mean = np.mean(predictions)
+        
+        difference = pred_mean - input_mean
+        percent_change = (difference / input_mean) * 100 if input_mean != 0 else 0
+        
+        return {
+            'input_recent_mean': float(input_mean),
+            'prediction_mean': float(pred_mean),
+            'absolute_difference': float(difference),
+            'percent_change': float(percent_change),
+            'trend_direction': 'up' if difference > 0 else 'down' if difference < 0 else 'stable'
+        }
+    
+    def _analyze_alert_timing(self, predictions: list, input_data: list) -> dict:
+        """경고 시점 분석"""
+        if not predictions:
+            return {'alert': 'no_predictions'}
+            
+        # 간단한 임계값 기준 (실제로는 더 정교해야 함)
+        critical_low = 70.0  # 낮은 임계값
+        critical_high = 130.0  # 높은 임계값
+        
+        alerts = []
+        for i, pred in enumerate(predictions):
+            if pred <= critical_low:
+                alerts.append({
+                    'step': i + 1,
+                    'level': pred,
+                    'type': 'low_water_alert',
+                    'severity': 'high' if pred <= 60 else 'medium'
+                })
+            elif pred >= critical_high:
+                alerts.append({
+                    'step': i + 1,
+                    'level': pred,
+                    'type': 'high_water_alert',
+                    'severity': 'high' if pred >= 140 else 'medium'
+                })
+                
+        return {
+            'alerts': alerts,
+            'alert_count': len(alerts),
+            'first_alert_step': alerts[0]['step'] if alerts else None,
+            'critical_thresholds': {
+                'low': critical_low,
+                'high': critical_high
+            }
+        }
     
     def get_info(self) -> Dict[str, str]:
         """도구 정보 반환"""

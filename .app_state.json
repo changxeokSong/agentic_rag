@@ -1,0 +1,56 @@
+{
+  "automation_status": true,
+  "autonomous_monitoring": true,
+  "system_initialized": true,
+  "last_update": "2025-09-20T10:56:59.272476",
+  "orchestrator_active": true,
+  "arduino_connected": false,
+  "simulation_mode": true,
+  "reservoir_data": {
+    "gagok": {
+      "water_level": 66.85,
+      "pump_status": "ON",
+      "alert_level": 90.0,
+      "active_pumps": 2,
+      "total_pumps": 2,
+      "pump_details": {
+        "pump_a": true,
+        "pump_b": true
+      },
+      "measured_at": "2025-09-20T10:56:22.736402",
+      "reservoir_name": "가곡 배수지"
+    },
+    "haeryong": {
+      "water_level": 2.09,
+      "pump_status": "OFF",
+      "alert_level": 85.0,
+      "active_pumps": 0,
+      "total_pumps": 2,
+      "pump_details": {
+        "pump_a": false,
+        "pump_b": false
+      },
+      "measured_at": "2025-09-20T10:56:22.736402",
+      "reservoir_name": "해룡 배수지"
+    },
+    "sangsa": {
+      "water_level": 87.57,
+      "pump_status": "OFF",
+      "alert_level": 95.0,
+      "active_pumps": 0,
+      "total_pumps": 3,
+      "pump_details": {
+        "pump_a": false,
+        "pump_b": false,
+        "pump_c": false
+      },
+      "measured_at": "2025-09-20T10:56:22.736402",
+      "reservoir_name": "상사 배수지"
+    }
+  },
+  "pump_status": {
+    "haeryong": "ON",
+    "sangsa": "OFF",
+    "gagok": "AUTO"
+  }
+}

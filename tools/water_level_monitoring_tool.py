@@ -99,11 +99,12 @@ class WaterLevelMonitor:
                     for reservoir_id, reservoir_info in self.reservoirs.items():
                         level_value = result[reservoir_info['level_col']]
                         
-                        # 펌프 상태 확인
+                        # 펌프 상태 확인 (double precision 값을 boolean으로 변환)
                         pump_statuses = {}
                         active_pumps = 0
                         for pump_col in reservoir_info['pumps']:
-                            pump_status = bool(result[pump_col])
+                            pump_value = float(result[pump_col]) if result[pump_col] is not None else 0.0
+                            pump_status = pump_value >= 1.0
                             pump_statuses[pump_col.replace(f'{reservoir_id}_', '')] = pump_status
                             if pump_status:
                                 active_pumps += 1
@@ -211,10 +212,11 @@ class WaterLevelMonitor:
                         for reservoir_id, reservoir_info in self.reservoirs.items():
                             level_value = row[reservoir_info['level_col']]
                             
-                            # 펌프 상태
+                            # 펌프 상태 (double precision 값을 boolean으로 변환)
                             pump_statuses = {}
                             for pump_col in reservoir_info['pumps']:
-                                pump_statuses[pump_col.replace(f'{reservoir_id}_', '')] = bool(row[pump_col])
+                                pump_value = float(row[pump_col]) if row[pump_col] is not None else 0.0
+                                pump_statuses[pump_col.replace(f'{reservoir_id}_', '')] = pump_value >= 1.0
                             
                             data_by_reservoir[reservoir_info['name']].append({
                                 'timestamp': self._safe_datetime_convert(row['measured_at']),
@@ -403,9 +405,9 @@ class WaterLevelMonitor:
                              sangsa_water_level, sangsa_pump_a, sangsa_pump_b, sangsa_pump_c)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                         """, (timestamp_str, 
-                              round(gagok_level, 1), gagok_pump_a, gagok_pump_b,
-                              round(haeryong_level, 1), haeryong_pump_a, haeryong_pump_b,
-                              round(sangsa_level, 1), sangsa_pump_a, sangsa_pump_b, sangsa_pump_c))
+                              round(gagok_level, 1), 1.0 if gagok_pump_a else 0.0, 1.0 if gagok_pump_b else 0.0,
+                              round(haeryong_level, 1), 1.0 if haeryong_pump_a else 0.0, 1.0 if haeryong_pump_b else 0.0,
+                              round(sangsa_level, 1), 1.0 if sangsa_pump_a else 0.0, 1.0 if sangsa_pump_b else 0.0, 1.0 if sangsa_pump_c else 0.0))
                     
                     conn.commit()
                     

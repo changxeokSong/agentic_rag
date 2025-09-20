@@ -150,8 +150,8 @@ class VectorSearchTool:
                         file_id = metadata.get('original_file_id')  # files.id
                         chunk_index = metadata.get('chunk_index', 'N/A')
                         score = doc.get('score', 'N/A')
-                        # 내용이 길 경우 일부만 표시
-                        display_content = content[:200] + '...' if isinstance(content, str) and len(content) > 200 else content
+                        # 검색 기반 답변의 근거로 사용하기 위해 전체 내용을 반환
+                        display_content = content
                         result.append({
                             "filename": filename,
                             "file_id": str(file_id) if file_id is not None else None,
@@ -214,8 +214,8 @@ class VectorSearchTool:
                 file_id = metadata.get('original_file_id')  # files.id
                 chunk_index = metadata.get('chunk_index', 'N/A')
                 score = doc.get('score', 'N/A')
-                # 내용이 길 경우 일부만 표시
-                display_content = content[:200] + '...' if isinstance(content, str) and len(content) > 200 else content
+                # 검색 기반 답변의 근거로 사용하기 위해 전체 내용을 반환
+                display_content = content
                 result.append({
                     "filename": filename,
                     "file_id": str(file_id) if file_id is not None else None,

@@ -1,333 +1,312 @@
-# ⚡ Synergy ChatBot - AI 기반 통합 챗봇 시스템
+# 🌊 Agentic RAG - 지능형 수위 관리 시스템
 
-## 📌 프로젝트 개요
+**Agentic RAG**는 AI 기반 문서 검색(RAG)과 IoT 수위 센서를 통합한 지능형 수위 관리 및 자동화 시스템입니다. Docker를 활용한 멀티 서비스 아키텍처로 구성되어 있으며, 실시간 수위 모니터링, 예측, 자동 제어 기능을 제공합니다.
 
-Synergy ChatBot은 LM Studio와 PostgreSQL을 기반으로 한 현대적인 AI 챗봇 시스템입니다. 아두이노 하드웨어 제어, LSTM 딥러닝 예측, 문서 검색 등의 전문 도구들을 하나의 직관적인 대화형 인터페이스에서 제공합니다. 복합 명령어를 자동으로 분석하여 멀티 도구를 동시에 실행할 수 있는 지능형 오케스트레이션 시스템을 갖추고 있습니다.
+## 🚀 주요 특징
 
-## ⚡ 주요 기능
+### 📚 AI 문서 검색 시스템
+- **벡터 임베딩**: Hugging Face `dragonkue/BGE-m3-ko` (1024차원) 모델 사용
+- **벡터 데이터베이스**: PostgreSQL + pgvector (L2 distance)
+- **문서 지원**: PDF, TXT, DOCX 자동 청크 분할 및 임베딩
+- **지능형 검색**: 의미론적 유사도 기반 문서 검색
+- **한글 최적화**: 나눔고딕 폰트 적용된 PDF 보고서 생성
 
-- **💧 아두이노 수위센서**: USB 시리얼 통신을 통한 실시간 수위 모니터링 및 펌프 제어
-- **📈 LSTM 수위 예측**: TensorFlow/Keras 기반 딥러닝 모델을 활용한 수위 예측 시스템
-- **🔎 벡터 검색**: PostgreSQL + pgvector 기반 의미 검색
-- **📂 파일 관리**: 파일 업로드, 벡터화, 저장 및 검색
-- **💬 지능형 대화**: 복합 요청 자동 분석 및 멀티 도구 병렬 실행
-- **📊 실시간 대시보드**: 수위 그래프 및 시스템 상태 모니터링
+### 🌊 수위 관리 시스템
+- **실시간 모니터링**: Arduino 기반 수위 센서 연동
+- **LSTM 예측**: 딥러닝을 통한 수위 예측 (최대 24시간)
+- **자동 제어**: 펌프 자동 제어 및 경보 시스템
+- **다중 배수지**: 가곡, 해룡, 상사 배수지 독립 관리
+- **그래프 시각화**: 실시간 수위 변화 그래프
 
-## 🛠️ 기술 스택
+### 🤖 자율 자동화 시스템
+- **Agentic AI**: 자율적 의사결정 및 제어
+- **실시간 대응**: 위험 상황 자동 감지 및 대응
+- **로그 시스템**: 모든 자동화 활동 추적 및 기록
+- **원격 제어**: 웹 기반 펌프 제어 및 모니터링
 
-### Backend
-- **Python 3.8+**
-- **LM Studio**: 로컬 LLM 모델 서빙 (EXAONE-3.5-7.8B-Instruct)
-- **PostgreSQL + pgvector**: 메인 데이터베이스 및 벡터 검색
-- **TensorFlow/Keras**: LSTM 수위 예측 모델
-- **PySerial**: 아두이노 USB 시리얼 통신
-- **OpenAI API**: 텍스트 임베딩 생성
+## 🏗️ 시스템 아키텍처
 
-### Frontend
-- **Streamlit**: 현대적인 웹 인터페이스
-- **카카오톡 스타일 UI**: 직관적인 채팅 인터페이스
-- **실시간 상태 모니터링**: 시스템 및 아두이노 연결 상태
+```
+사용자 → Streamlit UI (앱.py) → 오케스트레이터 → 도구들 → 저장소 → PostgreSQL
+                               ↓
+                        자율 자동화 시스템
+                               ↓
+                        Arduino 하드웨어
+```
 
-## 🔧 주요 도구
-
-### 1. 벡터 검색 도구 (`VectorSearchTool`)
-- PostgreSQL + pgvector 기반 의미 검색
-- OpenAI 임베딩 모델 사용
-- PDF, TXT, DOCX 문서 지원
-- **예시**: "업로드한 문서에서 AI 관련 내용 찾아줘"
-
-### 2. 파일 목록 도구 (`ListFilesTool`)
-- PostgreSQL에 저장된 파일 목록 조회
-- 파일명, 크기, 업로드 날짜 정보 제공
-- **예시**: "업로드된 파일 목록 보여줘"
-
-### 3. 아두이노 수위센서 도구 (`ArduinoWaterSensorTool`)
-- USB 시리얼 통신 (pyserial, 115200 baud)
-- 실시간 수위 센서 값 읽기
-- 2개 펌프 개별 제어 (pump1, pump2)
-- WSL2 환경에서 usbipd-win 지원
-- **지원 액션**: read_water_level, pump1_on/off, pump2_on/off, connect, status
-- **예시**: "수위 센서 값 읽어줘", "펌프1 켜줘", "아두이노 연결 상태 확인해줘"
-
-### 4. LSTM 수위 예측 도구 (`WaterLevelPredictionTool`)
-- TensorFlow/Keras 기반 LSTM 딥러닝 모델
-- 60개 시계열 데이터 입력으로 미래 수위 예측
-- 슬라이딩 윈도우 방식 다중 스텝 예측
-- **예시**: "수위 예측해줘", "[10.5, 11.2, 12.1] 데이터로 다음 30분 수위 예측해줘"
+### 핵심 구성요소
+- **Frontend**: Streamlit 기반 웹 인터페이스
+- **Backend**: 비동기 서비스 및 데이터 처리
+- **Database**: PostgreSQL + pgvector (벡터 검색)
+- **AI Models**: LM Studio + LSTM + Embedding
+- **Hardware**: Arduino 기반 센서 및 펌프
 
 ## 📁 프로젝트 구조
 
 ```
 agentic_rag/
-├── app.py                              # Streamlit 메인 애플리케이션 (카카오톡 스타일 UI)
-├── water_dashboard.py                  # 수위 모니터링 대시보드
-├── config.py                           # 환경변수 기반 시스템 설정
-├── requirements.txt                    # Python 패키지 의존성
-├── core/                              # 핵심 시스템 아키텍처
-│   ├── orchestrator.py                # 전체 시스템 오케스트레이션
-│   ├── query_analyzer.py              # 사용자 쿼리 분석 및 도구 선택
-│   ├── response_generator.py          # 최종 응답 생성
-│   └── tool_manager.py                # 도구 동적 등록 및 실행
-├── models/                            # LLM 클라이언트
-│   └── lm_studio.py                   # LM Studio API 클라이언트
-├── tools/                             # 전문 도구 구현
-│   ├── arduino_water_sensor_tool.py   # 아두이노 수위센서 및 펌프제어
-│   ├── list_files_tool.py            # 파일 목록 조회
-│   ├── vector_search_tool.py          # 벡터 검색
-│   └── water_level_prediction_tool.py # LSTM 수위 예측
-├── lstm_model/                        # 딥러닝 모델
-│   └── lstm_water_level_model.h5      # 학습된 LSTM 수위 예측 모델
-├── storage/                           # 데이터 저장소
-│   └── postgresql_storage.py          # PostgreSQL + pgvector 연동
-├── retrieval/                         # 문서 처리
-│   └── document_loader.py             # 문서 로더 및 청크 분할
-├── utils/                             # 유틸리티
-│   ├── arduino_direct.py              # 아두이노 직접 통신
-│   ├── helpers.py                     # 헬퍼 함수들
-│   └── logger.py                      # 로깅 시스템
-└── arduino/                           # 아두이노 스케치
-    └── sketch_jul26a11.ino            # 수위센서 및 펌프 제어 코드
+├── 🎯 메인 애플리케이션
+│   ├── app.py                     # Streamlit 메인 UI
+│   ├── automation_dashboard.py    # 자동화 시스템 대시보드
+│   ├── water_dashboard.py         # 수위 모니터링 대시보드
+│   └── config.py                  # 시스템 설정
+├── 🧠 핵심 시스템
+│   ├── core/
+│   │   ├── orchestrator.py        # 요청 오케스트레이션
+│   │   ├── query_analyzer.py      # 쿼리 분석
+│   │   ├── response_generator.py  # 응답 생성
+│   │   └── tool_manager.py        # 도구 관리
+├── 🛠️ 도구 시스템
+│   ├── tools/
+│   │   ├── vector_search_tool.py           # 벡터 검색
+│   │   ├── water_level_prediction_tool.py  # 수위 예측
+│   │   ├── arduino_water_sensor_tool.py    # 아두이노 센서
+│   │   ├── water_level_monitoring_tool.py  # 수위 모니터링
+│   │   ├── automation_control_tool.py      # 자동화 제어
+│   │   ├── advanced_water_analysis_tool.py # 고급 수위 분석
+│   │   └── real_time_database_control_tool.py # 실시간 DB 제어
+├── 🤖 자동화 서비스
+│   ├── services/
+│   │   ├── automation_manager.py   # 자동화 관리
+│   │   ├── autonomous_agent.py     # 자율 에이전트
+│   │   ├── decision_engine.py      # 의사결정 엔진
+│   │   └── logging_system.py       # 로깅 시스템
+├── 💾 데이터 및 모델
+│   ├── storage/
+│   │   └── postgresql_storage.py   # PostgreSQL 연동
+│   ├── models/
+│   │   └── lm_studio.py           # LM Studio 클라이언트
+│   ├── lstm_model/
+│   │   └── lstm_water_level_model.h5 # LSTM 모델
+│   └── retrieval/
+│       └── document_loader.py      # 문서 로더
+├── 🔧 유틸리티
+│   ├── utils/
+│   │   ├── logger.py              # 로깅 유틸
+│   │   ├── pdf_generator.py       # PDF 생성
+│   │   ├── state_manager.py       # 상태 관리
+│   │   └── arduino_direct.py      # 아두이노 직접 통신
+├── 🐳 Docker 설정
+│   ├── docker-compose.yml         # 멀티 서비스 구성
+│   ├── Dockerfile                 # 컨테이너 빌드
+│   ├── docker/
+│   │   └── postgres/init.sql      # DB 초기화 스크립트
+│   └── scripts/                   # 실행 스크립트
+└── 📋 설정 파일
+    ├── requirements.txt           # Python 패키지
+    ├── requirements.lock.txt      # 고정 버전
+    └── ENV_EXAMPLE.txt           # 환경변수 템플릿
 ```
 
-## 🚀 설치 및 실행
+## 🚀 빠른 시작
 
-### 1. 환경 설정
+### 1. 시스템 요구사항
+- **Docker Desktop** (필수)
+- **LM Studio** (선택, 로컬 LLM 사용 시)
+- **Arduino 하드웨어** (선택, 실제 센서 사용 시)
+- **Python 3.12+** (개발 환경)
 
+### 2. 환경 설정
 ```bash
 # 저장소 클론
-git clone <repository-url>
+git clone [repository-url]
 cd agentic_rag
 
-# 가상환경 생성 (선택사항)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# 환경변수 파일 생성
+cp ENV_EXAMPLE.txt .env
 
-# 패키지 설치
-pip install -r requirements.txt
+# .env 파일 편집 (필요한 토큰 및 설정 입력)
 ```
 
-### 2. 환경변수 설정
+### 3. Docker 실행 (권장)
+```bash
+# 초기 실행 (볼륨 초기화)
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
 
-`.env` 파일을 생성하고 다음과 같이 구성:
+# 서비스 상태 확인
+docker compose ps
+```
 
+### 4. 접속
+- **메인 대시보드**: http://localhost:8501
+- **자동화 대시보드**: http://localhost:8501 (페이지 전환)
+
+### 5. 기본 사용법
+1. **시스템 초기화**: 좌측 제어판에서 "시스템 초기화" 실행
+2. **문서 업로드**: 우측 "파일 업로드"로 PDF/TXT/DOCX 업로드
+3. **질의응답**: 중앙 채팅창에 질문 입력
+4. **수위 모니터링**: "수위 현황 보여줘", "그래프 그려줘" 등 명령
+5. **자동화 제어**: "자동화 시작해줘", "펌프1 켜줘" 등 명령
+
+## ⚙️ 환경변수 설정
+
+`.env` 파일 예시:
 ```env
 # LM Studio 설정
-LM_STUDIO_BASE_URL=http://localhost:1234/v1
+LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1
 LM_STUDIO_API_KEY=lm-studio
-LM_STUDIO_MODEL_NAME=exaone-3.5-7.8b-instruct
+LM_STUDIO_MODEL_NAME=exaone-4.0-1.2b
 
-# OpenAI API 키 (벡터 검색용)
-OPENAI_API_KEY=your_openai_api_key
+# 임베딩 설정
+EMBEDDING_BACKEND=HF
+EMBEDDING_MODEL_NAME=dragonkue/BGE-m3-ko
+EMBEDDING_DEVICE=cpu
+HUGGINGFACEHUB_API_TOKEN=your_hf_token
 
-# PostgreSQL 설정
-PG_DB_HOST=localhost
+# 데이터베이스 설정
+PG_DB_HOST=postgres
 PG_DB_PORT=5432
 PG_DB_NAME=synergy
 PG_DB_USER=synergy
 PG_DB_PASSWORD=synergy
 
-# 시스템 설정
+# 활성화 도구 (쉼표로 구분)
+ENABLED_TOOLS=vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor,water_level_monitoring_tool,real_time_database_control_tool,advanced_water_analysis_tool,automation_control_tool
+
+# 기타 설정
 DEBUG_MODE=false
-ENABLED_TOOLS=list_files_tool,vector_search_tool,arduino_water_sensor,water_level_prediction_tool
+OPENAI_API_KEY=your_openai_key
 ```
 
-### 3. PostgreSQL 설정
+## 🛠️ 주요 기능
 
-```sql
--- 데이터베이스 및 사용자 생성
-CREATE DATABASE synergy;
-CREATE USER synergy WITH PASSWORD 'synergy';
-GRANT ALL PRIVILEGES ON DATABASE synergy TO synergy;
+### 📖 문서 검색 및 QA
+- **벡터 검색**: "지난 분기 보고서에서 매출 관련 내용 찾아줘"
+- **파일 필터링**: "'프로젝트A.pdf' 파일에서 핵심 성과 요약해줘"
+- **태그 검색**: 특정 태그로 문서 분류 및 검색
 
--- pgvector 확장 설치
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+### 🌊 수위 관리
+- **실시간 측정**: "현재 수위 알려줘"
+- **예측**: "앞으로 3시간 수위 예측해줘"
+- **모니터링**: "24시간 수위 그래프 그려줘"
+- **경보**: 위험 수위 자동 감지 및 알림
 
-### 4. LM Studio 설정
+### 🔧 펌프 제어
+- **수동 제어**: "펌프1 켜줘", "펌프2 꺼줘"
+- **자동 제어**: 수위 기반 자동 펌프 작동
+- **상태 확인**: "펌프 상태 확인해줘"
 
-1. [LM Studio](https://lmstudio.ai/) 다운로드 및 설치
-2. EXAONE-3.5-7.8B-Instruct 모델 다운로드
-3. 로컬 서버 시작 (기본 포트: 1234)
+### 🤖 자동화 시스템
+- **시작/중지**: "자동화 시작해줘", "자율 시스템 꺼줘"
+- **상태 모니터링**: "자동화 상태 보여줘"
+- **로그 조회**: "최근 의사결정 로그 보여줘"
+- **하드웨어 진단**: "Arduino 연결 상태 확인해줘"
 
-### 5. 아두이노 설정 (선택사항)
+## 🔧 기술 스택
 
-#### 기본 설정
-1. 아두이노에 수위센서 및 펌프 제어 코드 업로드
-2. USB 케이블로 아두이노와 컴퓨터 연결
-3. 시리얼 포트 권한 설정: `sudo usermod -a -G dialout $USER`
+### Backend
+- **Python 3.12+**: 메인 런타임
+- **Streamlit**: 웹 UI 프레임워크
+- **LangChain**: LLM 오케스트레이션
+- **PostgreSQL + pgvector**: 벡터 데이터베이스
+- **TensorFlow/Keras**: LSTM 수위 예측 모델
 
-#### WSL2 환경 (Windows)
-1. Windows에 usbipd-win 설치
-2. USB 디바이스를 WSL2로 포워딩:
-   ```bash
-   # Windows PowerShell (관리자 권한)
-   usbipd wsl list
-   usbipd wsl attach --busid <busid>
-   
-   # WSL2에서 확인
-   lsusb
-   ls /dev/ttyACM*
-   ```
+### AI/ML
+- **LM Studio**: 로컬 LLM 서버
+- **Hugging Face Transformers**: 임베딩 모델
+- **LSTM**: 시계열 수위 예측
+- **RAG (Retrieval-Augmented Generation)**: 문서 기반 QA
 
-### 6. 애플리케이션 실행
+### Hardware/IoT
+- **Arduino**: 수위 센서 및 펌프 제어
+- **Serial Communication**: USB 시리얼 통신
+- **Real-time Data Collection**: 실시간 센서 데이터 수집
 
+### DevOps
+- **Docker & Docker Compose**: 컨테이너화
+- **Multi-service Architecture**: 분리된 프론트엔드/백엔드
+- **Health Checks**: 서비스 상태 모니터링
+
+## 🚨 트러블슈팅
+
+### 임베딩 차원 오류
 ```bash
-streamlit run app.py
+# 볼륨 초기화 (권장)
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
+
+# 또는 수동 마이그레이션
+docker compose exec -T postgres psql -U synergy -d synergy -c "
+  DROP INDEX IF EXISTS idx_chunks_embedding;
+  ALTER TABLE chunks DROP COLUMN IF EXISTS embedding;
+  ALTER TABLE chunks ADD COLUMN embedding vector(1024);
+  CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
+"
 ```
 
-브라우저에서 `http://localhost:8501` 접속
+### Arduino 연결 문제
+```bash
+# 컨테이너 내에서 USB 디바이스 확인
+docker compose exec backend ls -la /dev/tty*
 
-## 💡 사용 방법
-
-### 기본 사용법
-
-1. 웹 브라우저에서 `http://localhost:8501` 접속
-2. 좌측 제어판에서 "🔄 시스템 초기화" 버튼 클릭
-3. 시스템 상태 확인 (모델, API, 아두이노 연결 상태)
-4. 채팅창에 질문 입력
-
-### 주요 인터페이스
-
-#### 🎛️ 시스템 제어판 (좌측)
-- **시스템 초기화**: LM Studio, PostgreSQL, 아두이노 연결 설정
-- **수위 대시보드**: 실시간 수위 모니터링 페이지로 이동
-- **연결 상태**: 모델, API, 아두이노 실시간 상태 표시
-- **환경 설정**: 현재 시스템 설정 정보
-- **디버그 모드**: 최근 처리 정보 및 로그
-
-#### 💬 채팅 인터페이스 (중앙)
-- **카카오톡 스타일**: 직관적인 대화 인터페이스
-- **thinking 메시지**: AI 응답 생성 중 실시간 표시
-- **도구 실행 결과**: 각 도구의 실행 결과 상세 표시
-- **타임스탬프**: 메시지 전송 시간 및 처리 시간
-
-#### 📊 파일 및 상태 관리 (우측)
-- **수위 그래프**: 실시간 수위 상태 시각화
-- **파일 업로드**: 문서 업로드 및 벡터화
-- **파일 목록**: 업로드된 파일 관리 및 다운로드
-
-### 예시 명령어
-
-#### 아두이노 제어
-```
-"수위 센서 값 읽어줘"
-"펌프1 켜줘"
-"펌프2 꺼줘"
-"아두이노 연결 상태 확인해줘"
-"모든 펌프 상태 확인해줘"
+# Windows에서 시리얼 포트 확인
+# 장치 관리자 → 포트(COM & LPT) 확인
 ```
 
-#### LSTM 수위 예측
-```
-"수위 예측해줘"
-"[10.5, 11.2, 12.1, 13.0, 12.8] 데이터로 다음 30분 수위 예측해줘"
-"수위 모델 상태 확인해줘"
-```
+### 서비스 상태 확인
+```bash
+# 모든 서비스 상태
+docker compose ps
 
-#### 파일 및 벡터 검색
-```
-"업로드된 파일 목록 보여줘"
-"문서에서 AI 관련 내용 검색해줘"
-"보고서에서 매출 정보 찾아줘"
-```
+# 로그 확인
+docker compose logs frontend
+docker compose logs backend
+docker compose logs postgres
 
-#### 복합 명령어
-```
-"펌프1 켜주고 수위 센서 값 읽어줘"
-"펌프 상태 확인하고 수위 예측해줘"
-"파일 목록 보여주고 최신 데이터로 수위 예측해줘"
+# 헬스체크
+curl http://localhost:8501
 ```
 
-### 파일 업로드 및 벡터 검색
+### 메모리 부족
+```bash
+# 사용하지 않는 이미지 정리
+docker image prune -a
 
-1. 우측 패널의 "📤 파일 업로드" 섹션 사용
-2. 지원 형식: PDF, TXT, DOCX 등
-3. 업로드된 파일은 자동으로 청크 분할 및 벡터화
-4. OpenAI 임베딩으로 의미 검색 가능
+# 볼륨 정리
+docker volume prune
 
-## 🎯 시스템 아키텍처
-
-### 처리 플로우
-```
-사용자 요청
-    ↓
-QueryAnalyzer (LLM 기반 쿼리 분석)
-    ↓
-ToolManager (도구 선택 및 실행)
-    ↓
-ResponseGenerator (결과 통합 및 자연어 응답 생성)
-    ↓
-Streamlit UI (카카오톡 스타일 인터페이스로 결과 표시)
+# 시스템 전체 정리
+docker system prune -a
 ```
 
-### 핵심 컴포넌트
+## 📊 데이터베이스 스키마
 
-1. **Orchestrator**: 전체 시스템 조율, 비동기/동기 처리 지원
-2. **QueryAnalyzer**: LLM 기반 도구 선택 및 매개변수 추출
-3. **ToolManager**: 4개 전문 도구 동적 등록 및 병렬 실행
-4. **ResponseGenerator**: 멀티 도구 결과 통합 및 자연어 응답 생성
+### files 테이블
+- 업로드된 파일 메타데이터 저장
+- 파일 이름, 크기, 업로드 시간 등
 
-### UI 특징
+### chunks 테이블
+- 문서 청크 및 임베딩 벡터 저장
+- 1024차원 벡터 (dragonkue/BGE-m3-ko)
 
-- **3단 레이아웃**: 제어판, 채팅, 파일/상태 관리
-- **실시간 상태**: thinking 메시지, 연결 상태, 수위 그래프
-- **카카오톡 스타일**: 직관적인 말풍선 채팅 인터페이스
-- **반응형 디자인**: 다양한 화면 크기 지원
+### water 테이블
+- 실시간 수위 데이터 저장
+- 배수지별 수위, 펌프 상태, 측정 시간
 
-## 🔒 보안 고려사항
+### automation_logs 테이블
+- 자동화 시스템 로그 저장
+- 의사결정 과정, 실행 결과 추적
 
-- **API 키 관리**: 환경변수로 분리, 코드에 하드코딩 금지
-- **파일 업로드**: 타입 검증 및 크기 제한
-- **PostgreSQL**: 연결 보안 설정 및 SQL 인젝션 방지
-- **아두이노 통신**: 시리얼 포트 권한 관리
+## 🤝 기여하기
 
-## 🛟 문제해결
+1. 이슈 생성 및 토론
+2. 포크 후 브랜치 생성
+3. 변경사항 커밋
+4. 풀 리퀘스트 생성
 
-### 자주 발생하는 문제
+## 📜 라이선스
 
-#### 1. LM Studio 연결 오류
-- LM Studio가 실행 중인지 확인
-- 포트 번호 (1234) 및 모델 로드 상태 확인
-- EXAONE-3.5-7.8B-Instruct 모델 다운로드 여부 확인
+MIT License
 
-#### 2. PostgreSQL 연결 오류
-- PostgreSQL 서비스 실행 상태 확인
-- 데이터베이스 및 사용자 권한 확인
-- pgvector 확장 설치 여부 확인
+## 📞 지원
 
-#### 3. 아두이노 연결 오류
-- USB 케이블 연결 상태 확인
-- 시리얼 포트 권한 설정: `sudo usermod -a -G dialout $USER`
-- WSL2에서 usbipd-win USB 포워딩 확인
-- 아두이노 IDE에서 시리얼 모니터로 통신 테스트
-
-#### 4. LSTM 모델 오류
-- `lstm_model/lstm_water_level_model.h5` 파일 존재 확인
-- TensorFlow 버전 호환성 확인
-- 입력 데이터 형식 (60개 시계열 데이터) 확인
-
-#### 5. OpenAI API 오류
-- `.env` 파일의 OpenAI API 키 확인
-- OpenAI 계정 사용량 및 잔액 확인
-
-
-## 📄 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 있습니다.
-
-## 👥 기여하기
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📞 문의사항
-
-프로젝트 관련 문의사항이나 버그 리포트는 이슈로 등록해 주세요.
+- **이슈 등록**: GitHub Issues
+- **문서**: 프로젝트 Wiki
+- **개발자**: [개발팀 연락처]
 
 ---
 
-> **⚡ Synergy ChatBot**은 AI, IoT, 웹 서비스를 통합한 현대적인 지능형 챗봇 플랫폼입니다.  
-> 직관적인 카카오톡 스타일 인터페이스에서 하드웨어 제어부터 딥러닝 예측까지 모든 것을 제공합니다.
+**Agentic RAG**는 AI, IoT, 자동화가 융합된 차세대 스마트 수위 관리 솔루션입니다. 🌊🤖✨

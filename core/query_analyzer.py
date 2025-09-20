@@ -100,6 +100,29 @@ class QueryAnalyzer:
             "수위_예측": {
                 "keywords": ["수위 예측", "미래 수위", "앞으로 수위", "다음 수위", "시간 후 수위"],
                 "tools": [{"name": "water_level_prediction_tool", "arguments": {}}]
+            },
+            
+            # 고급 수위 분석 - 새로 추가
+            "고급_분석": {
+                "keywords": [
+                    "수위 분석", "트렌드 분석", "변화 추이", "상승 추세", "하강 추세",
+                    "비교 분석", "통계 분석", "평균", "표준편차", "선형회귀", 
+                    "언제까지", "얼마나 걸릴", "시간대 비교", "기간별 비교",
+                    "펌프 효과", "펌프 예상", "회복 시간", "경고 시간"
+                ],
+                "tools": [{"name": "advanced_water_analysis_tool", "arguments": {}}]
+            },
+            
+            # 모니터링 도구
+            "모니터링": {
+                "keywords": ["모니터링", "실시간", "그래프", "차트", "데이터 수집"],
+                "tools": [{"name": "water_level_monitoring_tool", "arguments": {}}]
+            },
+            
+            # 벡터 검색
+            "문서_검색": {
+                "keywords": ["검색", "찾아줘", "문서", "정보", "자료", "내용"],
+                "tools": [{"name": "vector_search_tool", "arguments": {}}]
             }
         }
         
@@ -113,29 +136,74 @@ class QueryAnalyzer:
                         selected_tools.extend(pattern_data["tools"])
                         break  # 패턴당 하나의 키워드만 매칭되면 충분
         
-        # 추가 규칙: 수위 예측 의도 정규식 매칭 (시간/분 + 뒤/후 + 수위 + 예측/예상 등)
+        # 추가 규칙: 복합 시간 및 분석 패턴 매칭
         try:
-            time_hours_match = re.search(r"(\d+)\s*시간\s*(뒤|후)", query_lower)
-            time_minutes_match = re.search(r"(\d+)\s*분\s*(뒤|후)", query_lower)
+            # 시간 표현 매칭 (더 다양한 패턴)
+            time_patterns = [
+                (r"(\d+)\s*시간\s*(뒤|후|이후)", "hours"),
+                (r"(\d+)\s*분\s*(뒤|후|이후)", "minutes"),
+                (r"(\d+)\s*일\s*(뒤|후|이후)", "days"),
+                (r"내일", "tomorrow"),
+                (r"어제", "yesterday"),
+                (r"오늘", "today"),
+                (r"지금부터\s*(\d+)", "from_now")
+            ]
+            
+            time_info = None
+            for pattern, time_type in time_patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    if time_type in ["hours", "minutes", "days"]:
+                        value = int(match.group(1))
+                        time_info = {time_type: value}
+                    elif time_type == "from_now" and match.group(1):
+                        time_info = {"hours": int(match.group(1))}
+                    else:
+                        time_info = {time_type: True}
+                    break
+
+            # 수위 예측 의도 확인
             has_water_and_predict = ("수위" in query_lower) and ("예측" in query_lower or "예상" in query_lower)
-            time_and_water = (
-                (time_hours_match is not None or time_minutes_match is not None) and ("수위" in query_lower)
-            )
+            time_and_water = time_info and ("수위" in query_lower)
 
             if has_water_and_predict or time_and_water:
                 args = {}
-                if time_hours_match:
-                    hours = int(time_hours_match.group(1))
-                    # 시간 기반 인자 제공
-                    args["prediction_hours"] = hours
-                    args["time_horizon"] = {"hours": hours}
-                elif time_minutes_match:
-                    minutes = int(time_minutes_match.group(1))
-                    args["time_horizon"] = {"minutes": minutes}
+                if time_info:
+                    args["time_horizon"] = time_info
                 selected_tools.append({"name": "water_level_prediction_tool", "arguments": args})
                 matched_patterns.append("수위_예측_정규식")
-        except Exception:
-            # 정규식 처리 중 오류가 나더라도 전체 흐름에는 영향 주지 않음
+            
+            # 비교 분석 패턴 매칭
+            comparison_patterns = [
+                r"(\w+)\s*(와|과)\s*(\w+)\s*비교",
+                r"(\d+시간?)\s*(전|후)\s*(과|와)\s*비교",
+                r"어제\s*(와|과)\s*오늘\s*비교",
+                r"지난\s*(\w+)\s*(과|와)\s*비교"
+            ]
+            
+            for pattern in comparison_patterns:
+                if re.search(pattern, query_lower):
+                    if "고급_분석" not in matched_patterns:
+                        selected_tools.append({"name": "advanced_water_analysis_tool", "arguments": {"analysis_type": "comparison"}})
+                        matched_patterns.append("비교_분석_정규식")
+                    break
+            
+            # 트렌드 분석 패턴 매칭
+            trend_patterns = [
+                r"추세|트렌드|변화|상승|하강|증가|감소",
+                r"기울기|회귀|통계|평균|편차",
+                r"언제까지|몇\s*시간|얼마나\s*걸"
+            ]
+            
+            for pattern in trend_patterns:
+                if re.search(pattern, query_lower) and "수위" in query_lower:
+                    if "고급_분석" not in matched_patterns:
+                        selected_tools.append({"name": "advanced_water_analysis_tool", "arguments": {"analysis_type": "trend"}})
+                        matched_patterns.append("트렌드_분석_정규식")
+                    break
+
+        except Exception as e:
+            logger.warning(f"정규식 패턴 매칭 중 오류: {e}")
             pass
 
         # 매칭된 패턴이 있으면 반환

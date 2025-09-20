@@ -6,6 +6,7 @@ import serial.tools.list_ports
 import re
 from typing import Dict, Any, Optional, List
 from utils.logger import setup_logger
+from utils.helpers import get_current_timestamp, create_error_response, create_success_response
 
 logger = setup_logger(__name__)
 
@@ -434,7 +435,7 @@ class ArduinoWaterSensorTool:
                 "total_data_chunks": total_chunks,
                 "total_bytes_received": total_bytes,
                 "raw_data_sample": all_data[:5],  # 첫 5개 데이터만 표시
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": get_current_timestamp(),
                 "port": self.arduino_port,
                 "baud_rate": self.baud_rate
             }
@@ -459,7 +460,7 @@ class ArduinoWaterSensorTool:
             return {
                 "success": False,
                 "error": f"❌ **통신 테스트 오류**\n• {str(e)}",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
     
     def _read_water_level(self, channel: Optional[int] = None) -> Dict[str, Any]:
@@ -479,7 +480,7 @@ class ArduinoWaterSensorTool:
                     "readings": [{'channel': channel, 'level': simulated_level}],
                     "channel_levels": {channel: simulated_level},
                     "unit": "percent",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": get_current_timestamp(),
                     "message": f"🔄 **시뮬레이션 모드** - 채널 {channel} 수위  \n• 현재 수위: **{simulated_level}%**",
                     "simulation_mode": True
                 }
@@ -497,7 +498,7 @@ class ArduinoWaterSensorTool:
                     "readings": [{'channel': i, 'level': levels[i]} for i in range(len(levels))],
                     "channel_levels": channel_levels,
                     "unit": "percent",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": get_current_timestamp(),
                     "message": f"🔄 **시뮬레이션 모드** - 수위 센서  \n• 현재 수위: **{current_level}%**  \n• 평균 수위: **{round(average_level, 1)}%**",
                     "simulation_mode": True
                 }
@@ -643,7 +644,7 @@ class ArduinoWaterSensorTool:
                         return {
                             "success": False,
                             "error": f"❌ **채널 {channel} 데이터 없음**  \n• 해당 채널에서 수위 데이터를 찾을 수 없습니다",
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                            "timestamp": get_current_timestamp()
                         }
                 else:
                     # 전체 채널 요청인 경우
@@ -673,7 +674,7 @@ class ArduinoWaterSensorTool:
                     "readings": water_levels,
                     "channel_levels": channel_levels if channel is None else {channel: current_level},
                     "unit": "percent",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": get_current_timestamp(),
                     "message": message,
                     "raw_data": all_received_data[:10],
                     "debug_info": {
@@ -701,7 +702,7 @@ class ArduinoWaterSensorTool:
                 return {
                     "success": False,
                     "error": f"❌ **수위 데이터 오류**  \n• 수신 라인: {len(all_received_data)}개  \n• 문제: 수위 데이터 형식을 찾을 수 없습니다",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": get_current_timestamp(),
                     "raw_data": all_received_data[:10],  # 디버깅용 원본 데이터
                     "raw_bytes_sample": [bytes(chunk) for chunk in raw_bytes_data[:3]],
                     "expected_format": "water level = XX% 또는 level: XX% 또는 단순 숫자 형태의 데이터가 필요합니다",
@@ -719,7 +720,7 @@ class ArduinoWaterSensorTool:
             return {
                 "success": False,
                 "error": f"❌ **수위 읽기 오류**  \n• {str(e)}",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
     
     def _send_pump_command(self, pump_id: int, state: str, duration: Optional[int] = None, auto_status: bool = False) -> Dict[str, Any]:
@@ -734,7 +735,7 @@ class ArduinoWaterSensorTool:
                 "ack_received": True,
                 "pump_id": pump_id,
                 "new_state": state,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": get_current_timestamp(),
                 "simulation_mode": True
             }
             
@@ -794,7 +795,7 @@ class ArduinoWaterSensorTool:
                 "ack_received": ack_received,
                 "pump_id": pump_id,
                 "new_state": state,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
             
             # duration이 설정된 경우 자동 종료 정보 추가
@@ -820,7 +821,7 @@ class ArduinoWaterSensorTool:
             return {
                 "success": False,
                 "error": f"❌ **펌프 제어 오류**  \n• {str(e)}",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
     
     def _get_pump_status(self) -> Dict[str, Any]:
@@ -874,13 +875,13 @@ class ArduinoWaterSensorTool:
                     "pump_status": pump_status,
                     "message": self._format_pump_status_message(pump_status),
                     "raw_response": " | ".join(response_lines),
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    "timestamp": get_current_timestamp()
                 }
             else:
                 return {
                     "success": False,
                     "error": "❌ **펌프 상태 오류**  \n• 상태 응답을 받지 못했습니다",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    "timestamp": get_current_timestamp()
                 }
                 
         except Exception as e:
@@ -888,7 +889,7 @@ class ArduinoWaterSensorTool:
             return {
                 "success": False,
                 "error": f"❌ **펌프 상태 오류**  \n• {str(e)}",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
     
     def _generate_detailed_status_message(self, pump_result: Dict[str, Any]) -> str:
@@ -1137,7 +1138,7 @@ class ArduinoWaterSensorTool:
             return {
                 "success": False,
                 "error": error_msg,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": get_current_timestamp()
             }
     
     def get_info(self) -> Dict[str, str]:

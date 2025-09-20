@@ -3,6 +3,8 @@
 import streamlit as st
 import time
 import base64
+import threading
+import asyncio
 from datetime import datetime
 from models.lm_studio import LMStudioClient
 from core.orchestrator import Orchestrator
@@ -15,11 +17,21 @@ from tools.water_level_monitoring_tool import water_level_monitoring_tool
 # 로거 설정
 logger = setup_logger(__name__)
 
-# --- 세션 상태 초기화 ---
+# 글로벌 상태 관리자 import
+from utils.state_manager import get_state_manager, sync_automation_status
+
+# --- 세션 상태 초기화 및 글로벌 상태 동기화 ---
+# 글로벌 상태 관리자 인스턴스
+state_manager = get_state_manager()
+
+# 글로벌 상태를 먼저 로드하고 세션에 동기화 (최초 1회만)
+if 'initial_sync_done' not in st.session_state:
+    state_manager.sync_to_streamlit()
+    st.session_state.initial_sync_done = True
+
+# 세션 상태 기본값 설정 (없는 것들만)
 if 'messages' not in st.session_state:
     st.session_state.messages = []
-if 'system_initialized' not in st.session_state:
-    st.session_state.system_initialized = False
 if 'debug_info' not in st.session_state:
     st.session_state.debug_info = {}
 if 'config_info' not in st.session_state:
@@ -30,6 +42,130 @@ if 'pdf_preview' not in st.session_state:
     st.session_state.pdf_preview = None
 if 'show_pdf_modal' not in st.session_state:
     st.session_state.show_pdf_modal = False
+if 'page' not in st.session_state:
+    st.session_state.page = "main"
+if 'autonomous_notifications' not in st.session_state:
+    st.session_state.autonomous_notifications = []
+if 'pending_approvals' not in st.session_state:
+    st.session_state.pending_approvals = []
+if 'monitoring_thread' not in st.session_state:
+    st.session_state.monitoring_thread = None
+if 'autonomous_agent' not in st.session_state:
+    st.session_state.autonomous_agent = None
+
+# 중요한 상태들은 글로벌 상태 우선, 없으면 기본값
+if 'automation_status' not in st.session_state:
+    st.session_state.automation_status = False
+if 'autonomous_monitoring' not in st.session_state:
+    st.session_state.autonomous_monitoring = False
+if 'system_initialized' not in st.session_state:
+    st.session_state.system_initialized = False
+if 'simulation_mode' not in st.session_state:
+    st.session_state.simulation_mode = True
+
+def start_autonomous_monitoring():
+    """백그라운드 자율 모니터링 시작"""
+    if not st.session_state.get('autonomous_agent'):
+        return False
+    
+    if st.session_state.get('monitoring_thread') and st.session_state.monitoring_thread.is_alive():
+        st.session_state.autonomous_monitoring = True  # 상태 동기화
+        return True  # 이미 실행 중
+    
+    def monitoring_loop():
+        """백그라운드 모니터링 루프"""
+        try:
+            # 세션 상태에서 autonomous_agent 안전하게 가져오기
+            autonomous_agent = st.session_state.get('autonomous_agent')
+            if not autonomous_agent:
+                logger.error("autonomous_agent가 세션 상태에 없습니다")
+                return
+            
+            # 새 이벤트 루프 생성 (스레드용)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                loop.run_until_complete(autonomous_agent.start_monitoring())
+            except Exception as e:
+                logger.error(f"자율 모니터링 오류: {e}")
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"모니터링 루프 초기화 오류: {e}")
+    
+    # 백그라운드 스레드에서 모니터링 시작
+    thread = threading.Thread(target=monitoring_loop, daemon=True)
+    thread.start()
+    
+    st.session_state.monitoring_thread = thread
+    st.session_state.autonomous_monitoring = True
+    
+    # 자율 에이전트의 내부 상태도 업데이트
+    autonomous_agent = st.session_state.autonomous_agent
+    if hasattr(autonomous_agent, 'is_monitoring'):
+        autonomous_agent.is_monitoring = True
+    
+    return True
+
+def stop_autonomous_monitoring():
+    """백그라운드 자율 모니터링 중지"""
+    if st.session_state.get('autonomous_agent'):
+        autonomous_agent = st.session_state.autonomous_agent
+        autonomous_agent.stop_monitoring()
+        
+        # 자율 에이전트의 내부 상태도 업데이트
+        if hasattr(autonomous_agent, 'is_monitoring'):
+            autonomous_agent.is_monitoring = False
+    
+    st.session_state.autonomous_monitoring = False
+    
+    # 스레드는 daemon이므로 자동으로 종료됨
+    if st.session_state.get('monitoring_thread'):
+        st.session_state.monitoring_thread = None
+
+def restore_automation_state():
+    """새로고침 후 자동화 상태 복구"""
+    try:
+        # 실제 자동화 도구 상태 확인
+        from tools.automation_control_tool import automation_control_tool
+        status_result = automation_control_tool(action='status')
+        
+        if status_result.get('success'):
+            # 실제 자동화가 실행 중인지 확인
+            is_running = status_result.get('is_running', False)
+            if is_running:
+                st.session_state.automation_status = True
+                logger.info("새로고침 후 자동화 상태 복구: 활성")
+                
+                # 자율 모니터링도 재시작 시도 (이미 실행 중이면 그대로 유지)
+                autonomous_success = False
+                if st.session_state.get('autonomous_agent'):
+                    if not st.session_state.get('autonomous_monitoring', False):
+                        if start_autonomous_monitoring():
+                            autonomous_success = True
+                            st.session_state.autonomous_monitoring = True
+                            logger.info("새로고침 후 자율 모니터링 재시작 성공")
+                        else:
+                            logger.warning("새로고침 후 자율 모니터링 재시작 실패")
+                    else:
+                        autonomous_success = True  # 이미 실행 중
+                        
+                # 글로벌 상태에 동기화
+                sync_automation_status(True, autonomous_success)
+                return True
+            else:
+                st.session_state.automation_status = False
+                st.session_state.autonomous_monitoring = False
+                
+                # 글로벌 상태에 동기화
+                sync_automation_status(False, False)
+                st.session_state.autonomous_monitoring = False
+                logger.info("새로고침 후 자동화 상태 복구: 비활성")
+                return True
+    except Exception as e:
+        logger.warning(f"자동화 상태 복구 실패: {e}")
+        return False
 
 def initialize_system():
     """AgenticRAG 시스템 초기화"""
@@ -41,10 +177,21 @@ def initialize_system():
             # 오케스트레이터 초기화
             orchestrator = Orchestrator(lm_studio_client)
             
+            # 자율 에이전트 초기화
+            from services.autonomous_agent import AutonomousAgent
+            autonomous_agent = AutonomousAgent(lm_studio_client)
+            
             # 세션 상태에 저장
             st.session_state.lm_studio_client = lm_studio_client
             st.session_state.orchestrator = orchestrator
+            st.session_state.autonomous_agent = autonomous_agent
             st.session_state.system_initialized = True
+            
+            # 글로벌 상태에도 시스템 초기화 상태 업데이트
+            state_manager.update_system_status(True, True)
+            
+            # 상태를 Streamlit에서 글로벌로 동기화
+            state_manager.sync_from_streamlit()
             
             # 설정 정보 업데이트
             st.session_state.config_info = print_config()
@@ -67,20 +214,15 @@ def initialize_system():
                             # 실제 하드웨어 포트가 발견된 경우에만 연결 시도
                             if arduino_tool._connect_to_arduino():
                                 logger.info("아두이노 자동 연결 성공")
-                                st.toast("🔌 아두이노 자동 연결 성공!", icon="✅")
                             else:
                                 logger.warning("아두이노 자동 연결 실패")
-                                st.warning("⚠️ 아두이노 자동 연결 실패 - USB 연결 및 드라이버를 확인하세요")
                         elif found_port == "SIMULATION":
                             logger.info("아두이노 시뮬레이션 모드")
                             arduino_tool.arduino_port = "SIMULATION"
-                            st.info("🔄 아두이노 시뮬레이션 모드로 실행됩니다")
                         else:
                             logger.warning("아두이노 포트를 찾을 수 없음")
-                            st.warning("⚠️ 아두이노를 찾을 수 없습니다 - USB 연결을 확인하세요")
                     except Exception as e:
                         logger.error(f"아두이노 자동 연결 중 오류: {e}")
-                        st.warning(f"⚠️ 아두이노 연결 시도 중 오류: {str(e)}")
                 
                 # 대시보드용 아두이노 직접 통신 객체 초기화 (자동 연결 안함)
                 from utils.arduino_direct import DirectArduinoComm
@@ -97,6 +239,13 @@ def initialize_system():
                 st.error(f"PostgreSQL 스토리지 초기화 중 오류가 발생했습니다: {e}")
                 st.session_state.system_initialized = False # 스토리지 초기화 실패 시 시스템 초기화 실패로 간주
                 return False
+            
+            # 자동화 상태 복구 (새로고침 후)
+            try:
+                restore_automation_state()
+                logger.info(f"자동화 상태 복구 완료: automation_status={st.session_state.get('automation_status')}, autonomous_monitoring={st.session_state.get('autonomous_monitoring')}")
+            except Exception as e:
+                logger.warning(f"자동화 상태 복구 중 오류 (무시됨): {e}")
             
             return True
         except Exception as e:
@@ -143,6 +292,131 @@ def render_pdf_modal():
             close_pdf_modal()
             st.rerun()
 
+def render_autonomous_agent_page():
+    """자율 에이전트 페이지 렌더링"""
+    st.set_page_config(
+        page_title="🔔 자율 에이전트 - Synergy ChatBot",
+        page_icon="🤖",
+        layout="wide"
+    )
+    
+    # 메인으로 돌아가기 버튼
+    if st.button("🏠 메인 대시보드로 돌아가기"):
+        st.session_state.page = "main"
+        st.rerun()
+    
+    st.title("🤖 자율 에이전트 시스템")
+    st.markdown("---")
+    
+    # 자율 에이전트가 초기화되어 있는지 확인
+    if 'autonomous_agent' not in st.session_state or st.session_state.autonomous_agent is None:
+        st.error("자율 에이전트가 초기화되지 않았습니다.")
+        st.info("메인 페이지에서 '🔄 시스템 초기화'를 먼저 실행해주세요.")
+        return
+    
+    # 자율 에이전트 대시보드 렌더링
+    autonomous_agent = st.session_state.autonomous_agent
+    
+    try:
+        from ui.notification_system import render_autonomous_dashboard
+        render_autonomous_dashboard(autonomous_agent)
+    except ImportError as e:
+        st.error(f"자율 에이전트 UI 모듈 로드 실패: {e}")
+        st.info("기본 자율 에이전트 제어 패널을 표시합니다.")
+        
+        # 기본 제어 패널
+        render_basic_autonomous_controls(autonomous_agent)
+
+def render_basic_autonomous_controls(autonomous_agent):
+    """기본 자율 에이전트 제어 패널"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🤖 시스템 상태")
+        status = autonomous_agent.get_system_status()
+        
+        st.metric("모니터링 상태", "🟢 실행 중" if status["is_monitoring"] else "🔴 중지됨")
+        st.metric("모니터링 주기", f"{status['monitoring_interval']}초")
+        st.metric("대기 중인 승인", status["pending_approvals_count"])
+        st.metric("총 실행된 조치", status["total_actions_executed"])
+        
+        # 모니터링 제어
+        if not status["is_monitoring"]:
+            if st.button("▶️ 자율 모니터링 시작"):
+                try:
+                    import asyncio
+                    asyncio.create_task(autonomous_agent.start_monitoring())
+                    st.success("자율 모니터링을 시작했습니다!")
+                    st.session_state.autonomous_monitoring = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"모니터링 시작 실패: {e}")
+        else:
+            if st.button("⏸️ 자율 모니터링 중지"):
+                autonomous_agent.stop_monitoring()
+                st.info("자율 모니터링을 중지했습니다.")
+                st.session_state.autonomous_monitoring = False
+                st.rerun()
+    
+    with col2:
+        st.subheader("🔔 실시간 알림")
+        
+        # 최근 알림 표시
+        notifications = autonomous_agent.get_notifications(limit=5)
+        
+        if notifications:
+            for notification in notifications:
+                with st.container():
+                    level_icon = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨", "emergency": "🆘"}
+                    icon = level_icon.get(notification.level.value, "📢")
+                    
+                    st.markdown(f"**{icon} {notification.title}**")
+                    st.caption(f"{notification.timestamp.strftime('%H:%M:%S')} - {notification.level.value.upper()}")
+                    st.text(notification.message)
+                    
+                    # 액션이 필요한 경우 승인 버튼
+                    if notification.action_required and notification.action_id:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ 승인", key=f"approve_{notification.action_id}"):
+                                if autonomous_agent.approve_action(notification.action_id):
+                                    st.success("조치가 승인되어 실행되었습니다!")
+                                    st.rerun()
+                        with col2:
+                            if st.button("❌ 거부", key=f"reject_{notification.action_id}"):
+                                if autonomous_agent.reject_action(notification.action_id):
+                                    st.info("조치가 거부되었습니다.")
+                                    st.rerun()
+                    
+                    st.divider()
+        else:
+            st.info("현재 알림이 없습니다.")
+        
+        # 대기 중인 승인
+        st.subheader("⏳ 승인 대기")
+        pending = autonomous_agent.get_pending_approvals()
+        
+        if pending:
+            for approval in pending:
+                with st.expander(f"🔄 {approval['description']}", expanded=True):
+                    st.write(f"**상황:** {approval['situation']}")
+                    st.write(f"**예상 효과:** {approval['estimated_impact']}")
+                    st.write(f"**요청 시간:** {approval['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ 승인", key=f"pending_approve_{approval['action_id']}"):
+                            if autonomous_agent.approve_action(approval['action_id']):
+                                st.success("승인 완료!")
+                                st.rerun()
+                    with col2:
+                        if st.button("❌ 거부", key=f"pending_reject_{approval['action_id']}"):
+                            if autonomous_agent.reject_action(approval['action_id']):
+                                st.info("거부 완료")
+                                st.rerun()
+        else:
+            st.info("승인 대기 중인 조치가 없습니다.")
+
 def main():
     """Streamlit 앱 메인 함수"""
     st.set_page_config(
@@ -163,6 +437,20 @@ def main():
         except ImportError as e:
             st.error(f"대시보드 모듈 로드 실패: {e}")
             st.session_state.page = "main"
+    
+    if st.session_state.page == "automation_dashboard":
+        try:
+            from automation_dashboard import SimpleAutomationDashboard
+            automation_dashboard = SimpleAutomationDashboard()
+            automation_dashboard.run()
+            return
+        except ImportError as e:
+            st.error(f"자동화 대시보드 모듈 로드 실패: {e}")
+            st.session_state.page = "main"
+    
+    if st.session_state.page == "autonomous_agent":
+        render_autonomous_agent_page()
+        return
             
     st.session_state.page = "main"
 
@@ -417,6 +705,14 @@ def main():
 
     # --- 왼쪽 컬럼: 제어판 ---
     with left_col:
+        # 글로벌 상태와 세션 상태 동기화
+        state_manager = get_state_manager()
+        state = state_manager.load_state()
+        
+        # 글로벌 상태에서 초기화 상태 확인
+        if state.get('system_initialized', False):
+            st.session_state.system_initialized = True
+        
         is_system_initialized = st.session_state.get('system_initialized', False)
 
         with st.container(border=True):
@@ -431,6 +727,84 @@ def main():
             if st.button("💧 수위 대시보드", use_container_width=True, disabled=not is_system_initialized):
                 st.session_state.page = "water_dashboard"
                 st.rerun()
+            
+            if st.button("🤖 통합 자동화 시스템", use_container_width=True, disabled=not is_system_initialized, help="자동화 시스템과 자율 에이전트가 통합된 대시보드"):
+                st.session_state.page = "automation_dashboard"
+                st.rerun()
+
+            # 자동화 제어 버튼들 (상태 기반 개선)
+            col1, col2 = st.columns(2)
+            
+            # 현재 자동화 상태 확인
+            automation_active = st.session_state.get('automation_status', False)
+            
+            with col1:
+                # 자동화가 이미 시작된 경우 버튼 비활성화
+                button_disabled = not is_system_initialized or automation_active
+                button_text = "🤖 자동화 시작됨" if automation_active else "🤖 자동화 시작"
+                button_help = "이미 자동화가 실행 중입니다" if automation_active else "자동화 시스템을 시작합니다"
+                
+                if st.button(button_text, use_container_width=True, disabled=button_disabled, help=button_help):
+                    with st.spinner("자동화 시스템 시작 중..."):
+                        try:
+                            from tools.automation_control_tool import automation_control_tool
+                            
+                            result = automation_control_tool(action='start')
+                            
+                            if result.get('success'):
+                                st.session_state.automation_status = True
+                                
+                                # 자율 모니터링도 함께 시작
+                                autonomous_success = start_autonomous_monitoring()
+                                if autonomous_success:
+                                    st.session_state.autonomous_monitoring = True
+                                
+                                # 글로벌 상태에 동기화
+                                sync_automation_status(True, autonomous_success)
+                                
+                                if autonomous_success:
+                                    st.success("✅ 자동화 + 자율 에이전트 시작!")
+                                else:
+                                    st.success("✅ 자동화 시작! (자율 에이전트는 수동 시작 필요)")
+                            else:
+                                st.error(f"시작 실패: {result.get('error')}")
+                        except Exception as e:
+                            st.error(f"자동화 시작 오류: {str(e)}")
+                        st.rerun()
+            
+            with col2:
+                # 자동화가 중지된 경우 버튼 비활성화
+                button_disabled = not is_system_initialized or not automation_active
+                button_text = "🛑 자동화 중단" if automation_active else "🛑 중단됨"
+                button_help = "자동화 시스템을 중단합니다" if automation_active else "자동화가 이미 중단되어 있습니다"
+                
+                if st.button(button_text, use_container_width=True, disabled=button_disabled, help=button_help):
+                    with st.spinner("자동화 시스템 중단 중..."):
+                        try:
+                            from tools.automation_control_tool import automation_control_tool
+                            result = automation_control_tool(action='stop')
+                            if result.get('success'):
+                                st.session_state.automation_status = False
+                                st.session_state.autonomous_monitoring = False
+                                
+                                # 자율 모니터링도 함께 중지
+                                stop_autonomous_monitoring()
+                                
+                                # 글로벌 상태에 동기화
+                                sync_automation_status(False, False)
+                                
+                                st.info("🛑 자동화 + 자율 에이전트 중단")
+                            else:
+                                st.error(f"중단 실패: {result.get('error')}")
+                        except Exception as e:
+                            st.error(f"자동화 중단 오류: {str(e)}")
+                        st.rerun()
+            
+            # 현재 상태 명확히 표시
+            if automation_active:
+                st.success("🟢 **자동화 시스템 활성 상태**", icon="✅")
+            else:
+                st.info("⚫ **자동화 시스템 비활성 상태**", icon="⏸️")
 
             if is_system_initialized:
                 st.success("✅ 시스템 준비완료")
@@ -492,6 +866,27 @@ def main():
                 st.markdown(f"**모델**: `{model_info.get('model', '-')}`")
                 st.markdown(f"""**API**: {'<span style="color: #16a34a;">✅ 연결됨</span>' if api_ok else '<span style="color: #dc2626;">❌ 연결 안됨</span>'}""", unsafe_allow_html=True)
                 st.markdown(f"**아두이노**: <span style='color: {arduino_color};'>{arduino_status}</span>", unsafe_allow_html=True)
+                
+                # 통합 자동화 상태 표시
+                automation_active = st.session_state.get('automation_status', False)
+                autonomous_monitoring = st.session_state.get('autonomous_monitoring', False)
+                
+                # 통합 상태로 표시
+                if automation_active and autonomous_monitoring:
+                    st.markdown("**🤖 통합 자동화**: <span style='color: #16a34a;'>🟢 완전 활성</span>", unsafe_allow_html=True)
+                elif automation_active:
+                    st.markdown("**🤖 통합 자동화**: <span style='color: #f59e0b;'>🟡 부분 활성</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown("**🤖 통합 자동화**: <span style='color: #6b7280;'>⚫ 비활성</span>", unsafe_allow_html=True)
+                
+                # 세부 상태 (간단히)
+                if automation_active or autonomous_monitoring:
+                    status_parts = []
+                    if automation_active:
+                        status_parts.append("기본 자동화")
+                    if autonomous_monitoring:
+                        status_parts.append("자율 에이전트")
+                    st.caption(f"활성 구성요소: {', '.join(status_parts)}")
 
             else:
                 st.info("시스템 초기화 후 표시됩니다.")
@@ -1088,6 +1483,185 @@ def main():
             else:
                 st.info("시스템 초기화 후 표시됩니다.")
 
+        # 자동화 모니터링 위젯
+        with st.container(border=True):
+            st.subheader("🤖 자동화 모니터링")
+            if is_system_initialized:
+                # 세션 상태에서 일관된 상태 확인
+                automation_active = st.session_state.get('automation_status', False)
+                autonomous_monitoring = st.session_state.get('autonomous_monitoring', False)
+                
+                # 통합된 상태 표시
+                if automation_active:
+                    if autonomous_monitoring:
+                        st.success("🟢 **자동화 + 자율 에이전트 활성**", icon="🤖")
+                        st.markdown("**상태**: 통합 AI 시스템이 30초마다 분석 및 자동 제어")
+                    else:
+                        st.warning("🟡 **자동화 활성 (자율 에이전트 대기)**", icon="🤖")
+                        st.markdown("**상태**: 기본 자동화만 활성화됨")
+                else:
+                    st.info("⚫ **자동화 시스템 비활성**", icon="⏸️")
+                    st.markdown("**상태**: 수동 모드 - 시스템 제어 탭에서 시작 가능")
+                
+                # 자동화가 활성화된 경우에만 세부 정보 표시
+                if automation_active:
+                    # 최근 자동화 로그 가져오기 (시도)
+                    try:
+                        from tools.automation_control_tool import automation_control_tool
+                        status_result = automation_control_tool(action='status')
+                        
+                        if status_result.get('success'):
+                            recent_events = status_result.get('recent_events', [])[:3]  # 최근 3개만
+                            
+                            if recent_events:
+                                st.markdown("**🔍 최근 활동:**")
+                                for event in recent_events:
+                                    timestamp = event.get('timestamp', '')
+                                    if timestamp:
+                                        # 시간만 표시 (HH:MM 형식)
+                                        try:
+                                            from datetime import datetime
+                                            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                            time_str = dt.strftime('%H:%M')
+                                        except:
+                                            time_str = timestamp[-8:-3] if len(timestamp) > 8 else timestamp
+                                    else:
+                                        time_str = "N/A"
+                                    
+                                    event_type = event.get('event_type', 'INFO')
+                                    message = event.get('message', '')
+                                    reservoir = event.get('reservoir_id', '')
+                                    
+                                    # 이벤트 타입별 아이콘
+                                    if event_type == 'ERROR':
+                                        icon = "🔴"
+                                    elif event_type == 'WARNING':
+                                        icon = "🟡"
+                                    elif event_type == 'ACTION':
+                                        icon = "⚡"
+                                    else:
+                                        icon = "ℹ️"
+                                    
+                                    # 메시지 줄이기
+                                    short_msg = message[:40] + "..." if len(message) > 40 else message
+                                    st.markdown(f"{icon} `{time_str}` {short_msg}")
+                            else:
+                                st.markdown("*활동 기록 없음*")
+                        
+                        # 시스템 건강 상태
+                        system_health = status_result.get('system_health', {})
+                        critical_count = len(system_health.get('critical_reservoirs', []))
+                        warning_count = len(system_health.get('warning_reservoirs', []))
+                        
+                        if critical_count > 0:
+                            st.error(f"🚨 위험: {critical_count}개 배수지", icon="⚠️")
+                        elif warning_count > 0:
+                            st.warning(f"⚠️ 주의: {warning_count}개 배수지", icon="📢")
+                        else:
+                            st.success("✅ 시스템 정상", icon="💚")
+                            
+                    except Exception as e:
+                        logger.debug(f"자동화 상태 조회 오류: {e}")
+                        st.info("자동화 에이전트 동작 중")
+                        
+                # 비활성 상태는 위에서 이미 표시했으므로 중복 제거
+                
+                # 상태 새로고침
+                if st.button("🔄 상태 새로고침", use_container_width=True, key="refresh_automation"):
+                    st.rerun()
+                        
+            else:
+                st.info("시스템 초기화 후 표시됩니다.")
+
+        # 자율 에이전트 실시간 알림 위젯
+        with st.container(border=True):
+            st.subheader("🔔 실시간 알림")
+            if is_system_initialized and st.session_state.get('autonomous_agent'):
+                autonomous_agent = st.session_state.autonomous_agent
+                
+                # 최근 알림 3개만 표시
+                notifications = autonomous_agent.get_notifications(limit=3)
+                
+                if notifications:
+                    for notification in notifications:
+                        level_colors = {
+                            "info": "#3b82f6",
+                            "warning": "#f59e0b", 
+                            "critical": "#ef4444",
+                            "emergency": "#dc2626"
+                        }
+                        level_icons = {
+                            "info": "ℹ️",
+                            "warning": "⚠️",
+                            "critical": "🚨", 
+                            "emergency": "🆘"
+                        }
+                        
+                        # 알림 level 처리 (문자열 또는 enum 값)
+                        level_str = notification.get('level', 'info')
+                        if hasattr(level_str, 'value'):
+                            level_str = level_str.value
+                        elif hasattr(level_str, 'name'):
+                            level_str = level_str.name
+                        else:
+                            level_str = str(level_str).lower()
+                        
+                        color = level_colors.get(level_str.lower(), "#6b7280")
+                        icon = level_icons.get(level_str.lower(), "📢")
+                        
+                        with st.container():
+                            # 알림 데이터 안전하게 추출
+                            title = notification.get('title', notification.get('message', '알림'))
+                            message = notification.get('message', '')
+                            timestamp = notification.get('timestamp')
+                            
+                            # 타임스탬프 처리
+                            if timestamp:
+                                if hasattr(timestamp, 'strftime'):
+                                    time_str = timestamp.strftime('%H:%M:%S')
+                                else:
+                                    # 문자열 형태의 timestamp 처리
+                                    try:
+                                        from datetime import datetime
+                                        if isinstance(timestamp, str):
+                                            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                            time_str = dt.strftime('%H:%M:%S')
+                                        else:
+                                            time_str = str(timestamp)
+                                    except:
+                                        time_str = str(timestamp)
+                            else:
+                                time_str = "N/A"
+                            
+                            st.markdown(f"""
+                            <div style="border-left: 3px solid {color}; padding: 8px 12px; margin: 6px 0; background: #f8fafc; border-radius: 0 6px 6px 0;">
+                                <strong style="color: {color};">{icon} {title}</strong><br>
+                                <small style="color: #6b7280;">{time_str}</small><br>
+                                <span style="font-size: 13px;">{message[:100]}{'...' if len(message) > 100 else ''}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # 승인이 필요한 경우 미니 버튼
+                            action_required = notification.get('action_required', False)
+                            action_id = notification.get('action_id')
+                            if action_required and action_id:
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button("✅", key=f"mini_approve_{action_id}", help="승인"):
+                                        if autonomous_agent.approve_action(action_id):
+                                            st.toast("승인 완료!", icon="✅")
+                                            st.rerun()
+                                with col2:
+                                    if st.button("❌", key=f"mini_reject_{action_id}", help="거부"):
+                                        if autonomous_agent.reject_action(action_id):
+                                            st.toast("거부 완료", icon="❌")
+                                            st.rerun()
+                else:
+                    st.info("🔕 현재 알림이 없습니다.")
+                
+            else:
+                st.info("시스템 초기화 후 알림이 표시됩니다.")
+
         with st.container(border=True):
             st.subheader("📤 파일 업로드")
             if is_system_initialized:
@@ -1111,7 +1685,7 @@ def main():
                                 st.error("스토리지 시스템이 초기화되지 않았습니다.")
             else:
                 st.info("시스템 초기화 후 파일 업로드가 가능합니다.")
-
+                
         with st.container(border=True):
             st.subheader("📂 파일 목록")
             if is_system_initialized:

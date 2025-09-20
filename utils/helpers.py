@@ -2,10 +2,112 @@
 
 import json
 import time
+from datetime import datetime
 from functools import wraps
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+def get_current_timestamp(format_string="%Y-%m-%d %H:%M:%S"):
+    """현재 시간을 지정된 형식으로 반환"""
+    return time.strftime(format_string)
+
+def get_datetime_now():
+    """현재 datetime 객체 반환"""
+    return datetime.now()
+
+def format_timestamp(dt=None, format_string="%Y-%m-%d %H:%M:%S"):
+    """datetime 객체를 문자열로 포맷팅"""
+    if dt is None:
+        dt = datetime.now()
+    return dt.strftime(format_string)
+
+def get_arduino_tool():
+    """Arduino 도구 인스턴스를 안전하게 가져오기"""
+    try:
+        from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
+        return ArduinoWaterSensorTool()
+    except ImportError as e:
+        logger.error(f"Arduino 도구 임포트 실패: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Arduino 도구 초기화 실패: {e}")
+        return None
+
+def get_database_connector():
+    """데이터베이스 연결자를 안전하게 가져오기"""
+    try:
+        from services.database_connector import get_database_connector as _get_db
+        return _get_db()
+    except ImportError as e:
+        logger.error(f"데이터베이스 연결자 임포트 실패: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"데이터베이스 연결자 초기화 실패: {e}")
+        return None
+
+def get_state_manager():
+    """상태 관리자를 안전하게 가져오기"""
+    try:
+        from utils.state_manager import get_state_manager as _get_state
+        return _get_state()
+    except ImportError as e:
+        logger.error(f"상태 관리자 임포트 실패: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"상태 관리자 초기화 실패: {e}")
+        return None
+
+def create_error_response(error_message, error_type="일반 오류", timestamp=None):
+    """표준화된 오류 응답 생성"""
+    return {
+        "success": False,
+        "error": f"❌ **{error_type}**\n• {error_message}",
+        "timestamp": timestamp or get_current_timestamp()
+    }
+
+def create_success_response(message, data=None, timestamp=None):
+    """표준화된 성공 응답 생성"""
+    result = {
+        "success": True,
+        "message": f"✅ {message}",
+        "timestamp": timestamp or get_current_timestamp()
+    }
+    if data:
+        result.update(data)
+    return result
+
+def create_warning_response(message, data=None, timestamp=None):
+    """표준화된 경고 응답 생성"""
+    result = {
+        "success": True,
+        "warning": f"⚠️ {message}",
+        "timestamp": timestamp or get_current_timestamp()
+    }
+    if data:
+        result.update(data)
+    return result
+
+def get_session_state_value(key, default=None):
+    """안전하게 Streamlit 세션 상태 값 가져오기"""
+    try:
+        import streamlit as st
+        return getattr(st.session_state, key, default)
+    except (ImportError, AttributeError):
+        return default
+
+def set_session_state_value(key, value):
+    """안전하게 Streamlit 세션 상태 값 설정하기"""
+    try:
+        import streamlit as st
+        setattr(st.session_state, key, value)
+        return True
+    except (ImportError, AttributeError):
+        return False
+
+def get_lm_studio_client():
+    """LM Studio 클라이언트를 안전하게 가져오기"""
+    return get_session_state_value('lm_studio_client')
 
 def retry(max_retries=3, delay=1):
     """재시도 데코레이터"""

@@ -5,6 +5,9 @@ from tools.vector_search_tool import VectorSearchTool
 from tools.water_level_prediction_tool import WaterLevelPredictionTool
 from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
 from tools.water_level_monitoring_tool import water_level_monitoring_tool
+from tools.real_time_database_control_tool import real_time_database_control_tool
+from tools.advanced_water_analysis_tool import advanced_water_analysis_tool
+from tools.automation_control_tool import automation_control_tool
 from config import ENABLED_TOOLS
 from utils.logger import setup_logger
 
@@ -43,6 +46,18 @@ class ToolManager:
         # 수위 모니터링 도구 등록 (함수형)
         if "water_level_monitoring_tool" in ENABLED_TOOLS:
             self.tools["water_level_monitoring_tool"] = water_level_monitoring_tool
+
+        # 실시간 데이터베이스 제어 도구 등록 (함수형)
+        if "real_time_database_control_tool" in ENABLED_TOOLS:
+            self.tools["real_time_database_control_tool"] = real_time_database_control_tool
+
+        # 고급 수위 분석 도구 등록 (함수형)
+        if "advanced_water_analysis_tool" in ENABLED_TOOLS:
+            self.tools["advanced_water_analysis_tool"] = advanced_water_analysis_tool
+
+        # 자동화 제어 도구 등록 (함수형) - Agentic AI 핵심 도구
+        if "automation_control_tool" in ENABLED_TOOLS:
+            self.tools["automation_control_tool"] = automation_control_tool
 
         logger.info(f"등록된 도구: {', '.join(self.tools.keys())}")
     
@@ -125,6 +140,18 @@ class ToolManager:
     def get_all_tools(self):
         """모든 도구 목록 반환"""
         return list(self.tools.values())
+    
+    def get_tool(self, tool_name):
+        """
+        지정된 도구 객체 반환
+        
+        Args:
+            tool_name (str): 도구 이름
+            
+        Returns:
+            도구 객체 또는 None
+        """
+        return self.tools.get(tool_name)
     
     def get_tool_info(self):
         """도구 정보 반환"""

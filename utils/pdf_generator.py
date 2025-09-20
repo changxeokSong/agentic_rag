@@ -13,7 +13,7 @@ try:
     from reportlab.lib.enums import TA_LEFT, TA_CENTER
     from reportlab.lib.units import inch
     from reportlab.lib.colors import HexColor
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, LongTable
     from reportlab.platypus.tableofcontents import TableOfContents
     from reportlab.lib import colors
     from reportlab.pdfbase import pdfmetrics
@@ -47,6 +47,26 @@ class MarkdownToPDFConverter:
         
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
+        # 표 렌더링 관련 기본 스타일
+        self.table_header_style = ParagraphStyle(
+            name='TblHeader',
+            parent=self.styles['Normal'],
+            fontName=self.korean_font if self.korean_font == 'KoreanFont' else 'Helvetica-Bold',
+            fontSize=11,
+            leading=14,
+            textColor=colors.white,
+            wordWrap='CJK'
+        )
+        self.table_body_style = ParagraphStyle(
+            name='TblBody',
+            parent=self.styles['Normal'],
+            fontName=self.korean_font,
+            fontSize=10,
+            leading=14,
+            textColor=HexColor('#374151'),
+            wordWrap='CJK'
+        )
+        self._doc_width = None
         
     def _setup_korean_font(self):
         """한글 폰트 설정"""
@@ -94,7 +114,9 @@ class MarkdownToPDFConverter:
             
             # 웹에서 나눔고딕 다운로드 시도 (리눅스/도커 환경)
             try:
-                font_url = "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothic.ttf"
+                # GitHub 페이지 URL은 HTML이라 바이너리 다운로드가 실패하므로 raw URL 사용
+                # 참고: https://github.com/fonts-archive/NanumGothic/blob/main/NanumGothic.ttf
+                font_url = "https://raw.githubusercontent.com/fonts-archive/NanumGothic/main/NanumGothic.ttf"
                 font_dir = os.path.expanduser("~/.local/share/fonts/")
                 os.makedirs(font_dir, exist_ok=True)
                 font_path = os.path.join(font_dir, "NanumGothic.ttf")
@@ -282,6 +304,8 @@ class MarkdownToPDFConverter:
                 topMargin=72,
                 bottomMargin=18
             )
+            # 표 너비 계산을 위해 문서 폭 저장
+            self._doc_width = (A4[0] - 72 - 72)
             
             # 스토리 (PDF 내용) 생성
             story = []
@@ -487,44 +511,70 @@ class MarkdownToPDFConverter:
                     rows.append(row)
             
             if rows:
-                # 테이블 생성
-                table = Table(rows)
-                # 한글 폰트 설정
-                header_font = self.korean_font if self.korean_font == 'KoreanFont' else 'Helvetica-Bold'
-                body_font = self.korean_font if self.korean_font == 'KoreanFont' else 'Helvetica'
-                
+                # 1) 텍스트를 Paragraph로 감싸 CJK 워드랩 적용
+                def to_para(text, style):
+                    try:
+                        txt = (text or '').strip()
+                    except Exception:
+                        txt = str(text)
+                    return Paragraph(txt.replace('\n', '<br/>'), style)
+
+                header = rows[0]
+                body = rows[1:] if len(rows) > 1 else []
+
+                header_cells = [to_para(c, self.table_header_style) for c in header]
+                body_cells = [[to_para(c, self.table_body_style) for c in r] for r in body]
+                new_rows = [header_cells] + body_cells
+
+                # 2) 컬럼 너비 계산 (문서 폭 내에서 비율로 분배)
+                num_cols = len(header_cells)
+                total_width = self._doc_width or 450
+
+                # 각 컬럼의 가중치 = 해당 컬럼의 최대 문자 길이 (상한/하한 적용)
+                def cell_len(x):
+                    try:
+                        return len(x.text) if hasattr(x, 'text') else len(str(x))
+                    except Exception:
+                        return 10
+
+                col_weights = []
+                for ci in range(num_cols):
+                    lengths = []
+                    # 헤더
+                    lengths.append(cell_len(header[ci]) if ci < len(header) else 8)
+                    # 본문
+                    for r in body:
+                        if ci < len(r):
+                            lengths.append(cell_len(r[ci]))
+                    w = max(lengths) if lengths else 8
+                    w = max(6, min(w, 40))  # 컬럼당 최소/최대 문자 폭 제한
+                    col_weights.append(w)
+
+                weight_sum = sum(col_weights) or (num_cols * 10)
+                col_widths = [max(40, (w / weight_sum) * total_width) for w in col_weights]
+
+                # 3) LongTable 사용으로 페이지 넘어가도 자동 분할 + 헤더 반복
+                table = LongTable(new_rows, colWidths=col_widths, repeatRows=1, splitByRow=1)
+                table.hAlign = 'LEFT'
+
+                # 4) 표 스타일 적용
                 table.setStyle(TableStyle([
-                    # 헤더 스타일 (더 매력적인 색상과 디자인)
                     ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), header_font),
-                    ('FONTSIZE', (0, 0), (-1, 0), 13),
-                    
-                    # 본문 스타일 (교대로 배경색 적용)
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                    ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#374151')),
-                    ('FONTNAME', (0, 1), (-1, -1), body_font),
-                    ('FONTSIZE', (0, 1), (-1, -1), 11),
-                    
-                    # 행 교대 배경색 (더 보기 좋게)
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f8fafc')]),
-                    
-                    # 테두리 (더 세련된 스타일)
-                    ('GRID', (0, 0), (-1, -1), 1.5, HexColor('#cbd5e1')),
-                    ('BOX', (0, 0), (-1, -1), 2, HexColor('#64748b')),
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    
-                    # 패딩 (더 여유있게)
-                    ('LEFTPADDING', (0, 0), (-1, -1), 15),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 15),
-                    ('TOPPADDING', (0, 0), (-1, -1), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f8fafc')]),
+                    ('GRID', (0, 0), (-1, -1), 0.8, HexColor('#cbd5e1')),
+                    ('BOX', (0, 0), (-1, -1), 1, HexColor('#64748b')),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                 ]))
-                
-                story.append(Spacer(1, 12))
+
+                story.append(Spacer(1, 10))
                 story.append(table)
-                story.append(Spacer(1, 12))
+                story.append(Spacer(1, 10))
                 
         except Exception as e:
             logger.error(f"테이블 변환 오류: {str(e)}")
