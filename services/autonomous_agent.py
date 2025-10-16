@@ -64,42 +64,51 @@ class AutonomousAgent:
         self.decision_interval = self.DECISION_INTERVAL_SECONDS
         
         # AI 에이전트 프롬프트
-        self.system_prompt = """당신은 배수지 수위 관리 전문 AI 에이전트입니다.
+        self.system_prompt = """배수지 펌프 제어 규칙:
 
-주요 역할:
-1. '가곡'과 '해룡' 두 배수지의 수위를 실시간 모니터링합니다.
-2. 새로운 펌프 규칙에 따라 시스템을 최적화하고 위험 상황을 방지합니다.
+[펌프 정보]
+펌프1: 외부 → 가곡 배수지 (reservoir_id="gagok")
+펌프2: 가곡 → 해룡 배수지 (reservoir_id="haeryong")
 
-펌프 정보 및 작동 규칙:
-- 펌프 1: 외부에서 '가곡' 배수지로 물을 채웁니다. 제어 시 `reservoir_id`를 'gagok'으로 설정해야 합니다.
-- 펌프 2: '가곡' 배수지에서 '해룡' 배수지로 물을 옮깁니다. 제어 시 `reservoir_id`를 'haeryong'으로 설정해야 합니다.
+[제어 규칙 - 반드시 준수]
+1. 가곡 수위 < 40m → 펌프1 켜기 (PUMP_ON)
+2. 가곡 수위 > 80m → 펌프1 끄기 (PUMP_OFF)
+3. 해룡 수위 < 40m → 펌프2 켜기 (PUMP_ON)
+4. 해룡 수위 > 80m → 펌프2 끄기 (PUMP_OFF)
 
-제어 로직 (중요 - 각 배수지 독립 제어):
+[중요] 각 배수지는 독립적입니다. 조건에 맞으면 반드시 actions에 추가하세요.
 
-**펌프 1 (가곡 배수지 급수):**
-- '가곡' 수위가 40m 미만이면 "펌프 1"을 켜십시오. (`reservoir_id: 'gagok'`, `action: 'PUMP_ON'`)
-- '가곡' 수위가 80m를 초과하면 "펌프 1"을 끄십시오. (`reservoir_id: 'gagok'`, `action: 'PUMP_OFF'`)
-
-**펌프 2 (해룡 배수지 급수):**
-- '해룡' 수위가 40m 미만이면 무조건 "펌프 2"를 켜십시오. (`reservoir_id: 'haeryong'`, `action: 'PUMP_ON'`)
-  → 가곡 수위는 신경쓰지 마세요. 가곡이 낮아지면 펌프 1이 자동으로 채웁니다.
-- '해룡' 수위가 80m를 초과하면 "펌프 2"를 끄십시오. (`reservoir_id: 'haeryong'`, `action: 'PUMP_OFF'`)
-  → 해룡 수위만 보고 판단하세요.
-
-응답 형식: JSON만 출력
+[응답 예시]
+입력: 가곡=0m, 해룡=85m
+출력:
 {
-  "decision": "판단 결과 (PUMP_CONTROL, STABLE)",
+  "decision": "PUMP_CONTROL",
   "actions": [
-    {
-      "reservoir_id": "gagok", // 또는 haeryong
-      "action": "PUMP_ON", // 또는 PUMP_OFF
-      "reason": "판단 이유"
-    }
+    {"reservoir_id": "gagok", "action": "PUMP_ON", "reason": "가곡 0m < 40m"},
+    {"reservoir_id": "haeryong", "action": "PUMP_OFF", "reason": "해룡 85m > 80m"}
   ],
-  "message": "상황 요약 메시지"
+  "message": "펌프1 ON, 펌프2 OFF"
 }
 
-현재 시스템 상태를 분석하고 새로운 펌프 규칙에 따라 필요한 조치를 JSON 형식으로 결정하세요."""
+입력: 가곡=10m, 해룡=50m
+출력:
+{
+  "decision": "PUMP_CONTROL",
+  "actions": [
+    {"reservoir_id": "gagok", "action": "PUMP_ON", "reason": "가곡 10m < 40m"}
+  ],
+  "message": "펌프1 ON"
+}
+
+입력: 가곡=50m, 해룡=50m
+출력:
+{
+  "decision": "STABLE",
+  "actions": [],
+  "message": "정상"
+}
+
+JSON만 출력하세요."""
 
     def start_monitoring(self):
         """자동화 모니터링 시작"""
@@ -234,7 +243,14 @@ class AutonomousAgent:
                 "recent_alerts_count": len(system_state.recent_alerts),
                 "simulation_mode": global_state.get('simulation_mode', True)
             }
-            
+
+            # AI에게 전달되는 데이터 로그 출력 (디버깅용)
+            logger.info(f"=== AI 판단 시작 ===")
+            logger.info(f"전달되는 배수지 수: {len(system_state.reservoir_data)}")
+            for res_id, data in system_state.reservoir_data.items():
+                logger.info(f"  - {res_id}: 수위={data.get('water_level', 0)}m, 펌프={data.get('pump_status', 'UNKNOWN')}")
+            logger.info(f"배수지 데이터 전체: {json.dumps(system_state.reservoir_data, indent=2, ensure_ascii=False)}")
+
             user_message = f"""현재 시스템 상태:
 {json.dumps(state_summary, indent=2, ensure_ascii=False)}
 
@@ -271,7 +287,15 @@ class AutonomousAgent:
                         ai_response = ai_response[json_start:json_end].strip()
                     
                     decision = json.loads(ai_response)
-                    
+
+                    # AI 응답 상세 로그
+                    logger.info(f"AI 응답 파싱 성공!")
+                    logger.info(f"  - decision: {decision.get('decision', 'UNKNOWN')}")
+                    logger.info(f"  - actions 개수: {len(decision.get('actions', []))}")
+                    for i, action in enumerate(decision.get('actions', [])):
+                        logger.info(f"    액션 {i+1}: {action.get('reservoir_id')} -> {action.get('action')} ({action.get('reason', '')})")
+                    logger.info(f"=== AI 판단 종료 ===")
+
                     # 의사결정 로그 기록
                     self.automation_logger.log(
                         LogLevel.INFO,
@@ -280,7 +304,7 @@ class AutonomousAgent:
                         f"AI 판단: {decision.get('decision', 'UNKNOWN')} - {decision.get('message', '')}",
                         {"ai_decision": decision, "system_state": state_summary}
                     )
-                    
+
                     return decision
                     
                 except json.JSONDecodeError as e:
