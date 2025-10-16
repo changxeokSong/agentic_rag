@@ -334,23 +334,35 @@ class WaterLevelMonitor:
             plt.suptitle('배수지 수위 모니터링', fontsize=16, fontweight='bold', y=0.98)
             plt.tight_layout()
             plt.subplots_adjust(top=0.92, hspace=0.4) # top 마진 조정 및 subplot 간격(hspace) 추가
-            
-            # 그래프를 이미지로 저장
-            buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight', 
-                       facecolor='white', edgecolor='none')
-            buffer.seek(0)
-            
-            # Base64 인코딩
-            image_base64 = base64.b64encode(buffer.getvalue()).decode()
-            
-            plt.close()
-            buffer.close()
-            
+
             # 파일 정보 생성
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"water_levels_{timestamp}.png"
             file_id = f"graph_{timestamp}"
+
+            # graphs 디렉토리 생성 (없을 경우)
+            import os
+            graphs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'graphs')
+            os.makedirs(graphs_dir, exist_ok=True)
+
+            # 파일 경로
+            filepath = os.path.join(graphs_dir, filename)
+
+            # 그래프를 파일로 저장
+            plt.savefig(filepath, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+
+            # 그래프를 메모리 버퍼에도 저장 (base64 인코딩용)
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+
+            # Base64 인코딩
+            image_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+            plt.close()
+            buffer.close()
             
             # 데이터베이스에서 가져온 실제 시간 범위 사용
             actual_start = data_result.get('actual_start_time')
@@ -370,12 +382,13 @@ class WaterLevelMonitor:
                 'success': True,
                 'graph_file_id': file_id,
                 'graph_filename': filename,
+                'graph_filepath': filepath,
                 'image_base64': image_base64,
                 'time_range_hours': hours,
                 'time_range_display': time_range_display,
                 'reservoirs_count': 2,
                 'data_points': data_result.get('data_points', 0),
-                'message': f'2개 배수지의 {hours}시간 수위 그래프 생성 완료\n시간 범위: {time_range_display}'
+                'message': f'2개 배수지의 {hours}시간 수위 그래프 생성 완료\n시간 범위: {time_range_display}\n파일 저장 위치: {filepath}'
             }
             
         except Exception as e:

@@ -323,6 +323,35 @@ def render_tool_results(tool_results: dict):
                     st.markdown(f"**🌡️ 기온:** {result['temperature_c']}°C")
                 if 'humidity' in result:
                     st.markdown(f"**💧 습도:** {result['humidity']}%")
+
+                # 이미지 표시 (graph_filepath 또는 image_base64)
+                if 'graph_filepath' in result and result.get('graph_filepath'):
+                    try:
+                        st.image(result['graph_filepath'], caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                    except Exception as e:
+                        logger.error(f"그래프 파일 표시 오류: {e}")
+                        # graph_filepath 실패 시 image_base64 시도
+                        if 'image_base64' in result and result.get('image_base64'):
+                            try:
+                                import base64
+                                import io
+                                from PIL import Image
+                                image_data = base64.b64decode(result['image_base64'])
+                                image = Image.open(io.BytesIO(image_data))
+                                st.image(image, caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                            except Exception as e2:
+                                logger.error(f"Base64 이미지 표시 오류: {e2}")
+                elif 'image_base64' in result and result.get('image_base64'):
+                    try:
+                        import base64
+                        import io
+                        from PIL import Image
+                        image_data = base64.b64decode(result['image_base64'])
+                        image = Image.open(io.BytesIO(image_data))
+                        st.image(image, caption=result.get('graph_filename', '이미지'), use_container_width=True)
+                    except Exception as e:
+                        logger.error(f"이미지 표시 오류: {e}")
+
                 with st.expander("전체 데이터", expanded=False):
                     st.json(result)
             else:
@@ -1222,6 +1251,40 @@ def main():
             # st.write()는 마크다운을 자동으로 렌더링하며 write_stream()과 호환됩니다
             st.write(content)
 
+            # 이미지가 있으면 메인 영역에 바로 표시
+            tool_results = message.get("tool_results", {})
+            if tool_results:
+                for tool_name, result in tool_results.items():
+                    if isinstance(result, dict):
+                        # graph_filepath로 이미지 표시 시도
+                        if 'graph_filepath' in result and result.get('graph_filepath'):
+                            try:
+                                st.image(result['graph_filepath'], caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                            except Exception as e:
+                                logger.error(f"그래프 파일 표시 오류: {e}")
+                                # 실패 시 image_base64 시도
+                                if 'image_base64' in result and result.get('image_base64'):
+                                    try:
+                                        import base64
+                                        import io
+                                        from PIL import Image
+                                        image_data = base64.b64decode(result['image_base64'])
+                                        image = Image.open(io.BytesIO(image_data))
+                                        st.image(image, caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                                    except Exception as e2:
+                                        logger.error(f"Base64 이미지 표시 오류: {e2}")
+                        # graph_filepath가 없으면 image_base64 시도
+                        elif 'image_base64' in result and result.get('image_base64'):
+                            try:
+                                import base64
+                                import io
+                                from PIL import Image
+                                image_data = base64.b64decode(result['image_base64'])
+                                image = Image.open(io.BytesIO(image_data))
+                                st.image(image, caption=result.get('graph_filename', '이미지'), use_container_width=True)
+                            except Exception as e:
+                                logger.error(f"이미지 표시 오류: {e}")
+
             # 타임스탬프와 처리시간
             timestamp_parts = []
             if message.get("timestamp"):
@@ -1545,6 +1608,39 @@ def main():
 
                         # 스트리밍 완료 후 추가 정보 표시
                         processing_time = time.time() - start_time
+
+                        # 이미지가 있으면 메인 영역에 바로 표시
+                        if tool_results:
+                            for tool_name, result in tool_results.items():
+                                if isinstance(result, dict):
+                                    # graph_filepath로 이미지 표시 시도
+                                    if 'graph_filepath' in result and result.get('graph_filepath'):
+                                        try:
+                                            st.image(result['graph_filepath'], caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                                        except Exception as e:
+                                            logger.error(f"그래프 파일 표시 오류: {e}")
+                                            # 실패 시 image_base64 시도
+                                            if 'image_base64' in result and result.get('image_base64'):
+                                                try:
+                                                    import base64
+                                                    import io
+                                                    from PIL import Image
+                                                    image_data = base64.b64decode(result['image_base64'])
+                                                    image = Image.open(io.BytesIO(image_data))
+                                                    st.image(image, caption=result.get('graph_filename', '그래프'), use_container_width=True)
+                                                except Exception as e2:
+                                                    logger.error(f"Base64 이미지 표시 오류: {e2}")
+                                    # graph_filepath가 없으면 image_base64 시도
+                                    elif 'image_base64' in result and result.get('image_base64'):
+                                        try:
+                                            import base64
+                                            import io
+                                            from PIL import Image
+                                            image_data = base64.b64decode(result['image_base64'])
+                                            image = Image.open(io.BytesIO(image_data))
+                                            st.image(image, caption=result.get('graph_filename', '이미지'), use_container_width=True)
+                                        except Exception as e:
+                                            logger.error(f"이미지 표시 오류: {e}")
 
                         # 타임스탬프와 처리시간 표시
                         st.caption(f"🕐 {datetime.now().strftime('%H:%M')} | ⚡ {processing_time:.2f}초")
