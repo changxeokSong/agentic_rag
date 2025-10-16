@@ -1218,9 +1218,9 @@ def main():
             # 메시지 내용 표시 (마크다운 형식, 일관된 렌더링)
             content = message["content"]
 
-            # 메시지가 이미 포맷팅되어 있으므로 그대로 표시
-            # unsafe_allow_html=False로 보안 유지
-            st.markdown(content)
+            # 메시지 내용을 그대로 표시 - write_stream()과 동일한 방식으로 렌더링
+            # st.write()는 마크다운을 자동으로 렌더링하며 write_stream()과 호환됩니다
+            st.write(content)
 
             # 타임스탬프와 처리시간
             timestamp_parts = []
@@ -1556,9 +1556,10 @@ def main():
                         render_tool_results(tool_results)
 
                     # thinking 메시지를 실제 응답으로 교체 (rerun 없이)
+                    # streamed_content를 사용하여 스트리밍 표시와 히스토리 저장이 동일하도록 함
                     st.session_state.messages[-1] = {
                         "role": "assistant",
-                        "content": full_response,
+                        "content": streamed_content,  # write_stream()이 반환한 실제 렌더링된 내용 사용
                         "tool_results": tool_results,
                         "timestamp": datetime.now().strftime("%H:%M"),
                         "processing_time": f"{processing_time:.2f}초",
