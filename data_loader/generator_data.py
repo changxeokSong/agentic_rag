@@ -7,19 +7,20 @@ import sys
 # ------------------- 설정 (사용자 환경에 맞게 수정) ------------------- #
 
 # 1. 데이터베이스 연결 정보
-DB_USER = "synergy"
-DB_PASS = "synergy"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "synergy" 
+import os
+DB_USER = os.getenv("PG_DB_USER", "synergy")
+DB_PASS = os.getenv("PG_DB_PASSWORD", "synergy")
+DB_HOST = os.getenv("PG_DB_HOST", "localhost")  # 도커: "postgres", 로컬: "localhost"
+DB_PORT = os.getenv("PG_DB_PORT", "5432")
+DB_NAME = os.getenv("PG_DB_NAME", "synergy") 
 
 TABLE_NAME = "water"
 
 # 2. 시뮬레이션 설정
 # 데이터 한 줄을 입력하고 다음 줄을 입력하기까지의 대기 시간 (초 단위)
-INSERT_INTERVAL_SECONDS = 0.5 # 속도를 약간 높였습니다.
+INSERT_INTERVAL_SECONDS = 0.000000001 # 속도를 약간 높였습니다.
 # DB가 비어있을 경우, 가상 데이터 생성을 시작할 시점
-DEFAULT_START_TIME = datetime(2020, 12, 1, 0, 0, 0)
+DEFAULT_START_TIME = datetime(2025, 9, 15, 0, 0, 0)
 
 # -------------------------------------------------------------------- #
 
@@ -45,9 +46,9 @@ def generate_and_save_virtual_data():
             latest_timestamp = connection.execute(query).scalar_one_or_none()
 
             if latest_timestamp:
-                start_time = latest_timestamp + timedelta(minutes=1)
-                print(f"DB에 저장된 마지막 데이터 시간: {latest_timestamp}")
-            else:
+          #       start_time = latest_timestamp + timedelta(minutes=1)
+          #       print(f"DB에 저장된 마지막 데이터 시간: {latest_timestamp}")
+          #   else:
                 start_time = DEFAULT_START_TIME
                 print("DB가 비어있어, 기본 시작 시간부터 데이터를 생성합니다.")
             

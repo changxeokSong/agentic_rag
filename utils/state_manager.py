@@ -44,11 +44,15 @@ class GlobalStateManager:
         self.default_state = {
             'automation_status': False,
             'autonomous_monitoring': False,
-            'system_initialized': True,  # 초기화 상태를 True로 설정
+            'system_initialized': False,  # 초기화 상태를 False로 설정 (강제 초기화)
             'last_update': None,
             'orchestrator_active': False,
             'arduino_connected': False,
-            'simulation_mode': True
+            'simulation_mode': True,
+            'model_loaded': False,
+            'arduino_port': None,
+            'last_successful_data': None,
+            'dashboard_data': []
         }
         
         # 상태 초기화
@@ -65,7 +69,20 @@ class GlobalStateManager:
             with self._lock:
                 if self.state_file.exists():
                     with open(self.state_file, 'r', encoding='utf-8') as f:
-                        state = json.load(f)
+                        content = f.read().strip()
+                        
+                    # 빈 파일이거나 불완전한 JSON인 경우 처리
+                    if not content or not content.startswith('{'):
+                        logger.warning("상태 파일이 비어있거나 손상됨, 기본 상태로 초기화")
+                        return self.default_state.copy()
+                    
+                    try:
+                        state = json.loads(content)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"JSON 파싱 오류: {e}")
+                        # 백업 파일 생성
+                        self._create_backup()
+                        return self.default_state.copy()
                     
                     # 유효성 검사
                     if isinstance(state, dict):
@@ -85,16 +102,47 @@ class GlobalStateManager:
         """상태를 파일에 저장"""
         try:
             with self._lock:
-                # 현재 시각 추가
+                # 현재 시각 추가 (문자열로 변환)
                 state['last_update'] = datetime.now().isoformat()
                 
+                # datetime 객체를 문자열로 변환
+                cleaned_state = self._clean_state_for_json(state)
+                
                 with open(self.state_file, 'w', encoding='utf-8') as f:
-                    json.dump(state, f, indent=2, ensure_ascii=False)
+                    json.dump(cleaned_state, f, indent=2, ensure_ascii=False)
                 
                 self._last_update = time.time()
                 
         except Exception as e:
             logger.error(f"상태 저장 오류: {e}")
+    
+    def _clean_state_for_json(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """JSON 직렬화를 위해 상태 정리"""
+        cleaned = {}
+        for key, value in state.items():
+            if isinstance(value, datetime):
+                cleaned[key] = value.isoformat()
+            elif isinstance(value, dict):
+                cleaned[key] = self._clean_state_for_json(value)
+            elif isinstance(value, list):
+                cleaned[key] = [
+                    self._clean_state_for_json(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                cleaned[key] = value
+        return cleaned
+    
+    def _create_backup(self):
+        """손상된 상태 파일 백업"""
+        try:
+            if self.state_file.exists():
+                backup_file = self.state_file.with_suffix('.json.backup')
+                import shutil
+                shutil.copy2(self.state_file, backup_file)
+                logger.info(f"상태 파일 백업 생성: {backup_file}")
+        except Exception as e:
+            logger.error(f"백업 생성 오류: {e}")
     
     def update_automation_status(self, automation_status: bool, autonomous_monitoring: bool = None):
         """자동화 상태 업데이트"""
@@ -128,6 +176,54 @@ class GlobalStateManager:
             state['orchestrator_active'] = orchestrator_active
         
         self.save_state(state)
+    
+    def update_arduino_status(self, connected: bool, port: str = None, simulation: bool = None):
+        """아두이노 연결 상태 업데이트"""
+        state = self.load_state()
+        state['arduino_connected'] = connected
+        
+        if port is not None:
+            state['arduino_port'] = port
+        
+        if simulation is not None:
+            state['simulation_mode'] = simulation
+        
+        self.save_state(state)
+    
+    def update_model_status(self, loaded: bool):
+        """모델 로드 상태 업데이트"""
+        state = self.load_state()
+        state['model_loaded'] = loaded
+        self.save_state(state)
+    
+    def save_dashboard_data(self, data: dict):
+        """대시보드 데이터 저장"""
+        state = self.load_state()
+        if 'dashboard_data' not in state:
+            state['dashboard_data'] = []
+        
+        # 최대 100개 항목 유지
+        state['dashboard_data'].append(data)
+        if len(state['dashboard_data']) > 100:
+            state['dashboard_data'] = state['dashboard_data'][-100:]
+        
+        self.save_state(state)
+    
+    def get_dashboard_data(self) -> list:
+        """대시보드 데이터 조회"""
+        state = self.load_state()
+        return state.get('dashboard_data', [])
+    
+    def save_last_successful_data(self, data: dict):
+        """마지막 성공한 데이터 저장"""
+        state = self.load_state()
+        state['last_successful_data'] = data
+        self.save_state(state)
+    
+    def get_last_successful_data(self) -> dict:
+        """마지막 성공한 데이터 조회"""
+        state = self.load_state()
+        return state.get('last_successful_data', None)
     
     def is_automation_active(self) -> tuple[bool, bool]:
         """자동화 상태 반환 (automation_status, autonomous_monitoring)"""

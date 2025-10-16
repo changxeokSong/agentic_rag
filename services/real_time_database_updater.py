@@ -61,9 +61,12 @@ class RealTimeDatabaseUpdater:
         self.simulation_mode = False
         self.simulation_base_levels = {
             'gagok': 75.0,
-            'haeryong': 68.0,
-            'sangsa': 82.0
+            'haeryong': 68.0
         }
+        
+        # 시뮬레이션용 펌프 상태
+        self.sim_pump1_on = False
+        self.sim_pump2_on = False
         
     def start_updating(self) -> bool:
         """실시간 데이터베이스 업데이트 서비스 시작"""
@@ -148,9 +151,8 @@ class RealTimeDatabaseUpdater:
                         self.last_reading = reading
                         self.readings_count += 1
                         logger.info(f"데이터 저장 성공 #{self.readings_count}: "
-                                  f"가곡={reading.gagok_level:.1f}cm, "
-                                  f"해룡={reading.haeryong_level:.1f}cm, "
-                                  f"상사={reading.sangsa_level:.1f}cm")
+                                  f"가곡={reading.gagok_level:.1f}m, "
+                                  f"해룡={reading.haeryong_level:.1f}m")
                     else:
                         logger.error("데이터베이스 저장 실패")
                 else:
@@ -197,10 +199,10 @@ class RealTimeDatabaseUpdater:
                 timestamp=datetime.now(),
                 gagok_level=float(sensor_data.get('channel_0', 0)),
                 haeryong_level=float(sensor_data.get('channel_1', 0)),
-                sangsa_level=float(sensor_data.get('channel_2', 0)),
+                sangsa_level=0.0, # 사용 안함
                 gagok_pump_a=pump_status.get('pump1', False),
-                gagok_pump_b=pump_status.get('pump2', False),
-                haeryong_pump_a=False,  # 아두이노가 2개 펌프만 제어할 수 있다고 가정
+                gagok_pump_b=False,
+                haeryong_pump_a=pump_status.get('pump2', False),
                 haeryong_pump_b=False,
                 sangsa_pump_a=False,
                 sangsa_pump_b=False,
@@ -212,51 +214,55 @@ class RealTimeDatabaseUpdater:
             return None
     
     def _generate_simulation_data(self) -> WaterLevelReading:
-        """시뮬레이션용 가상 데이터 생성"""
+        """시뮬레이션용 가상 데이터 생성 (새로운 펌프 로직 적용)"""
         now = datetime.now()
-        
-        # 시간에 따른 변화 시뮬레이션
+
+        # 펌프 로직 결정
+        # 펌프1: 가곡 수위가 40m 미만이면 켜고, 80m 초과면 끈다.
+        if self.simulation_base_levels['gagok'] < 40:
+            self.sim_pump1_on = True
+        elif self.simulation_base_levels['gagok'] > 80:
+            self.sim_pump1_on = False
+
+        # 펌프2: 가곡 수위가 90m 초과이고 해룡 수위가 80m 미만이면 켜고, 아니면 끈다.
+        if self.simulation_base_levels['gagok'] > 90 and self.simulation_base_levels['haeryong'] < 80:
+            self.sim_pump2_on = True
+        else:
+            self.sim_pump2_on = False
+
+        # 펌프 효과 적용
+        pump1_effect = 10.0 if self.sim_pump1_on else 0.0  # 펌프1은 가곡 수위를 시간당 10m 올림
+        pump2_effect_gagok = -15.0 if self.sim_pump2_on else 0.0 # 펌프2는 가곡 수위를 시간당 15m 내림
+        pump2_effect_haeryong = 12.0 if self.sim_pump2_on else 0.0 # 펌프2는 해룡 수위를 시간당 12m 올림
+
+        # 자연적인 수위 변화 (시간에 따른 정현파 + 노이즈)
         time_factor = (now.hour * 3600 + now.minute * 60 + now.second) / 86400.0
+        natural_change_gagok = np.sin(time_factor * 2 * np.pi + 0) * 0.5 + random.normalvariate(0, 0.1)
+        natural_change_haeryong = np.sin(time_factor * 2 * np.pi + np.pi/3) * 0.3 + random.normalvariate(0, 0.1)
+
+        # 시간 간격(초)당 변화량으로 변환
+        interval_in_hours = self.update_interval / 3600.0
         
-        # 각 배수지별 시뮬레이션 수위 (정현파 + 노이즈)
-        gagok_level = (self.simulation_base_levels['gagok'] + 
-                      15 * np.sin(time_factor * 2 * np.pi + 0) +
-                      random.normalvariate(0, 2))
-        
-        haeryong_level = (self.simulation_base_levels['haeryong'] + 
-                         20 * np.sin(time_factor * 2 * np.pi + np.pi/3) +
-                         random.normalvariate(0, 1.5))
-        
-        sangsa_level = (self.simulation_base_levels['sangsa'] + 
-                       25 * np.sin(time_factor * 2 * np.pi + 2*np.pi/3) +
-                       random.normalvariate(0, 3))
-        
+        # 새 수위 계산
+        self.simulation_base_levels['gagok'] += (pump1_effect + pump2_effect_gagok + natural_change_gagok) * interval_in_hours
+        self.simulation_base_levels['haeryong'] += (pump2_effect_haeryong + natural_change_haeryong) * interval_in_hours
+
         # 수위 범위 제한
-        gagok_level = max(30, min(120, gagok_level))
-        haeryong_level = max(30, min(120, haeryong_level))
-        sangsa_level = max(30, min(120, sangsa_level))
-        
-        # 펌프 상태 (수위에 따른 자동 제어 시뮬레이션)
-        gagok_pump_a = gagok_level > 85
-        gagok_pump_b = gagok_level > 95
-        haeryong_pump_a = haeryong_level > 80
-        haeryong_pump_b = haeryong_level > 90
-        sangsa_pump_a = sangsa_level > 90
-        sangsa_pump_b = sangsa_level > 100
-        sangsa_pump_c = sangsa_level > 110
+        self.simulation_base_levels['gagok'] = max(10, min(120, self.simulation_base_levels['gagok']))
+        self.simulation_base_levels['haeryong'] = max(10, min(120, self.simulation_base_levels['haeryong']))
         
         return WaterLevelReading(
             timestamp=now,
-            gagok_level=round(gagok_level, 1),
-            haeryong_level=round(haeryong_level, 1),
-            sangsa_level=round(sangsa_level, 1),
-            gagok_pump_a=gagok_pump_a,
-            gagok_pump_b=gagok_pump_b,
-            haeryong_pump_a=haeryong_pump_a,
-            haeryong_pump_b=haeryong_pump_b,
-            sangsa_pump_a=sangsa_pump_a,
-            sangsa_pump_b=sangsa_pump_b,
-            sangsa_pump_c=sangsa_pump_c
+            gagok_level=round(self.simulation_base_levels['gagok'], 2),
+            haeryong_level=round(self.simulation_base_levels['haeryong'], 2),
+            sangsa_level=0.0,
+            gagok_pump_a=self.sim_pump1_on,
+            gagok_pump_b=False,
+            haeryong_pump_a=self.sim_pump2_on, # 펌프2가 해룡 펌프 a에 해당
+            haeryong_pump_b=False,
+            sangsa_pump_a=False,
+            sangsa_pump_b=False,
+            sangsa_pump_c=False
         )
     
     def _save_to_database(self, reading: WaterLevelReading) -> bool:
@@ -306,8 +312,7 @@ class RealTimeDatabaseUpdater:
             "last_reading": {
                 "timestamp": self.last_reading.timestamp.isoformat() if self.last_reading else None,
                 "gagok_level": self.last_reading.gagok_level if self.last_reading else None,
-                "haeryong_level": self.last_reading.haeryong_level if self.last_reading else None,
-                "sangsa_level": self.last_reading.sangsa_level if self.last_reading else None
+                "haeryong_level": self.last_reading.haeryong_level if self.last_reading else None
             } if self.last_reading else None
         }
     
@@ -323,7 +328,6 @@ class RealTimeDatabaseUpdater:
                         "timestamp": reading.timestamp.isoformat(),
                         "gagok_level": reading.gagok_level,
                         "haeryong_level": reading.haeryong_level,
-                        "sangsa_level": reading.sangsa_level,
                         "pump_status": {
                             "gagok_pump_a": reading.gagok_pump_a,
                             "gagok_pump_b": reading.gagok_pump_b,

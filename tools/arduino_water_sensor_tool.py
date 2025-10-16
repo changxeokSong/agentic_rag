@@ -63,7 +63,13 @@ class ArduinoWaterSensorTool:
         import platform
         import os
         
-        # WSL2 환경 감지
+        # 0) 환경변수 우선 사용 (프론트/백엔드 간 통일용)
+        env_port = os.getenv('ARDUINO_SERIAL_PORT') or os.getenv('ARDUINO_PORT')
+        if env_port:
+            logger.info(f"환경변수에서 포트 감지: {env_port}")
+            return env_port
+
+        # 1) WSL2 환경 감지
         is_wsl = os.path.exists('/proc/version') and 'microsoft' in open('/proc/version').read().lower()
         if is_wsl:
             linux_usb_ports = self._check_wsl_usb_ports()
@@ -82,7 +88,7 @@ class ArduinoWaterSensorTool:
             logger.info("WSL2에서 USB 포트 미감지 - 시뮬레이션 모드")
             return "SIMULATION"
         
-        # Linux 환경에서 USB 시리얼 포트 검색
+        # 2) Linux 환경에서 USB 시리얼 포트 검색
         if platform.system() == "Linux":
             # /dev/ttyUSB*, /dev/ttyACM* 포트 검색
             import glob
@@ -100,7 +106,7 @@ class ArduinoWaterSensorTool:
                         logger.debug(f"Linux 포트 {port} 연결 실패: {e}")
                         continue
         
-        # Windows 환경 (WSL2가 아닌 경우)
+        # 3) Windows 환경 (WSL2가 아닌 경우)
         if platform.system() == "Windows":
             logger.info("Windows COM 포트 검색 중...")
             # COM1~COM20까지 모두 시도
@@ -114,7 +120,7 @@ class ArduinoWaterSensorTool:
                 except serial.SerialException:
                     continue
         
-        # pyserial 포트 스캔
+        # 4) pyserial 포트 스캔
         ports = serial.tools.list_ports.comports()
         logger.info(f"총 {len(ports)}개의 시리얼 포트 발견")
         
@@ -176,33 +182,8 @@ class ArduinoWaterSensorTool:
         usb_ports.extend(usb_serial_ports)
         
         if usb_ports:
-            logger.info(f"WSL2 USB 포트 발견: {usb_ports}")
-            
-            # 각 포트에 대해 권한 확인 및 Arduino 식별
-            accessible_ports = []
-            for port in usb_ports:
-                try:
-                    # 포트 접근 권한 확인
-                    port_stat = os.stat(port)
-                    if stat.S_ISCHR(port_stat.st_mode):
-                        # Arduino Mega는 주로 /dev/ttyACM0에 연결됨
-                        if port.startswith('/dev/ttyACM'):
-                            logger.info(f"✅ Arduino Mega 포트 발견: {port}")
-                            accessible_ports.insert(0, port)  # ACM 포트를 맨 앞에
-                        else:
-                            accessible_ports.append(port)
-                        logger.info(f"접근 가능한 포트: {port}")
-                except Exception as e:
-                    logger.warning(f"포트 {port} 접근 불가: {e}")
-                    logger.warning(f"권한 설정 필요: sudo chmod 666 {port}")
-                    # 권한 문제가 있어도 포트는 반환 (연결 시도해볼 수 있음)
-                    if port.startswith('/dev/ttyACM'):
-                        logger.info(f"권한 문제가 있는 Arduino Mega 포트: {port}")
-                        accessible_ports.insert(0, port)
-                    else:
-                        accessible_ports.append(port)
-            
-            return accessible_ports
+            logger.info(f"🎉 usbipd-win으로 포워딩된 USB 포트 발견: {usb_ports}")
+            return usb_ports
         else:
             logger.warning("WSL2에서 USB 포트를 찾을 수 없습니다")
             logger.warning("usbipd-win이 제대로 설정되었는지 확인하세요:")
@@ -481,7 +462,7 @@ class ArduinoWaterSensorTool:
                     "channel_levels": {channel: simulated_level},
                     "unit": "percent",
                     "timestamp": get_current_timestamp(),
-                    "message": f"🔄 **시뮬레이션 모드** - 채널 {channel} 수위  \n• 현재 수위: **{simulated_level}%**",
+                    "message": f"🔄 **시뮬레이션 모드** - 채널 {channel} 수위  \n• 현재 수위: **{simulated_level}m**",
                     "simulation_mode": True
                 }
             else:
@@ -499,7 +480,7 @@ class ArduinoWaterSensorTool:
                     "channel_levels": channel_levels,
                     "unit": "percent",
                     "timestamp": get_current_timestamp(),
-                    "message": f"🔄 **시뮬레이션 모드** - 수위 센서  \n• 현재 수위: **{current_level}%**  \n• 평균 수위: **{round(average_level, 1)}%**",
+                    "message": f"🔄 **시뮬레이션 모드** - 수위 센서  \n• 현재 수위: **{current_level}m**  \n• 평균 수위: **{round(average_level, 1)}m**",
                     "simulation_mode": True
                 }
         
@@ -573,7 +554,7 @@ class ArduinoWaterSensorTool:
                                             channel_num = int(match.group(1))
                                             water_level = int(match.group(2))
                                             water_levels.append({'channel': channel_num, 'level': water_level})
-                                            logger.info(f"✅ 수위 데이터 추출 (새 펌웨어): 채널 {channel_num} = {water_level}%")
+                                            logger.info(f"✅ 수위 데이터 추출 (새 펌웨어): 채널 {channel_num} = {water_level}m")
                                     
                                     # 패턴 2: "water level = 85%" 형태 (기존 호환성)
                                     elif 'water level' in line_lower and '%' in line_lower and 'channel[' not in line_lower:
@@ -581,7 +562,7 @@ class ArduinoWaterSensorTool:
                                         if match:
                                             water_level = int(match.group(1))
                                             water_levels.append({'channel': 0, 'level': water_level})  # 기본 채널 0
-                                            logger.info(f"✅ 수위 데이터 추출 (기존호환): {water_level}%")
+                                            logger.info(f"✅ 수위 데이터 추출 (기존호환): {water_level}m")
                                     
                                     # 패턴 3: "level: 85%" 형태 (기존 호환성)
                                     elif 'level' in line_lower and '%' in line_lower and 'channel[' not in line_lower:
@@ -589,7 +570,7 @@ class ArduinoWaterSensorTool:
                                         if match:
                                             water_level = int(match.group(1))
                                             water_levels.append({'channel': 0, 'level': water_level})
-                                            logger.info(f"✅ 수위 데이터 추출 (레벨): {water_level}%")
+                                            logger.info(f"✅ 수위 데이터 추출 (레벨): {water_level}m")
                                     
                                     # 패턴 4: 숫자와 % 기호가 포함된 모든 라인 (기존 호환성)
                                     elif '%' in line and any(char.isdigit() for char in line) and 'channel[' not in line_lower:
@@ -597,14 +578,14 @@ class ArduinoWaterSensorTool:
                                         if numbers:
                                             water_level = int(numbers[0])
                                             water_levels.append({'channel': 0, 'level': water_level})
-                                            logger.info(f"✅ 수위 데이터 추출 (일반): {water_level}%")
+                                            logger.info(f"✅ 수위 데이터 추출 (일반): {water_level}m")
                                     
                                     # 패턴 5: 단순 숫자만 있는 경우 (수위 값으로 가정)
                                     elif line.isdigit():
                                         water_level = int(line)
                                         if 0 <= water_level <= 100:  # 합리적인 수위 범위
                                             water_levels.append({'channel': 0, 'level': water_level})
-                                            logger.info(f"✅ 수위 데이터 추출 (숫자): {water_level}%")
+                                            logger.info(f"✅ 수위 데이터 추출 (숫자): {water_level}m")
                                         
                         except UnicodeDecodeError as e:
                             logger.warning(f"데이터 디코딩 오류: {e}")
@@ -639,7 +620,7 @@ class ArduinoWaterSensorTool:
                     if channel_data:
                         current_level = channel_data[-1]['level']
                         average_level = sum(reading['level'] for reading in channel_data) / len(channel_data)
-                        message = f"💧 **채널 {channel} 수위 센서 측정 완료**  \n• 현재 수위: **{current_level}%**"
+                        message = f"💧 **채널 {channel} 수위 센서 측정 완료**  \n• 현재 수위: **{current_level}m**"
                     else:
                         return {
                             "success": False,
@@ -662,10 +643,10 @@ class ArduinoWaterSensorTool:
                     
                     # 메시지 생성
                     if len(channel_levels) > 1:
-                        channel_info = ", ".join([f"채널{ch}: {lvl}%" for ch, lvl in sorted(channel_levels.items())])
-                        message = f"💧 **다중 채널 수위 센서 측정 완료**  \n• {channel_info}  \n• 평균 수위: **{round(average_level, 1)}%**"
+                        channel_info = ", ".join([f"채널{ch}: {lvl}m" for ch, lvl in sorted(channel_levels.items())])
+                        message = f"💧 **다중 채널 수위 센서 측정 완료**  \n• {channel_info}  \n• 평균 수위: **{round(average_level, 1)}m**"
                     else:
-                        message = f"💧 **수위 센서 측정 완료**  \n• 현재 수위: **{current_level}%**"
+                        message = f"💧 **수위 센서 측정 완료**  \n• 현재 수위: **{current_level}m**"
                 
                 result = {
                     "success": True,
@@ -979,13 +960,13 @@ class ArduinoWaterSensorTool:
         if channel_levels and len(channel_levels) > 1:
             for channel, level in sorted(channel_levels.items()):
                 status = get_level_status(level)
-                message += f"• 채널 {channel}: **{level}%** ({status})  \n"
-            message += f"• 전체 평균: **{average_level}%**  \n"
+                message += f"• 채널 {channel}: **{level}m** ({status})  \n"
+            message += f"• 전체 평균: **{average_level}m**  \n"
         else:
             # 단일 채널이거나 기존 형식인 경우
             status = get_level_status(current_level)
-            message += f"• 현재 수위: **{current_level}%** ({status})  \n"
-            message += f"• 평균 수위: **{average_level}%**  \n"
+            message += f"• 현재 수위: **{current_level}m** ({status})  \n"
+            message += f"• 평균 수위: **{average_level}m**  \n"
         
         message += f"{level_recommendation}  \n"
         

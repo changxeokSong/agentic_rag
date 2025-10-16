@@ -22,17 +22,23 @@ def format_timestamp(dt=None, format_string="%Y-%m-%d %H:%M:%S"):
         dt = datetime.now()
     return dt.strftime(format_string)
 
+_arduino_tool_instance = None
+
 def get_arduino_tool():
-    """Arduino 도구 인스턴스를 안전하게 가져오기"""
-    try:
-        from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
-        return ArduinoWaterSensorTool()
-    except ImportError as e:
-        logger.error(f"Arduino 도구 임포트 실패: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Arduino 도구 초기화 실패: {e}")
-        return None
+    """Arduino 도구 인스턴스를 안전하게 가져오기 (싱글톤 패턴)"""
+    global _arduino_tool_instance
+    if _arduino_tool_instance is None:
+        try:
+            from tools.arduino_water_sensor_tool import ArduinoWaterSensorTool
+            _arduino_tool_instance = ArduinoWaterSensorTool()
+            logger.info("새로운 ArduinoWaterSensorTool 인스턴스 생성")
+        except ImportError as e:
+            logger.error(f"Arduino 도구 임포트 실패: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Arduino 도구 초기화 실패: {e}")
+            return None
+    return _arduino_tool_instance
 
 def get_database_connector():
     """데이터베이스 연결자를 안전하게 가져오기"""
@@ -151,8 +157,8 @@ def format_tool_results(results):
         if isinstance(obj, (str, int, float, bool)) or obj is None:
             s = obj if isinstance(obj, str) else obj
             # 너무 긴 문자열 자르기
-            if isinstance(s, str) and len(s) > 2000:
-                return s[:2000] + "… [truncated]"
+            if isinstance(s, str) and len(s) > 16000:
+                return s[:16000] + "… [truncated]"
             return s
         try:
             return str(obj)
@@ -184,7 +190,16 @@ def clean_ai_response(response):
     if not response:
         return response
     
+    import re
+    
     response = response.strip()
+    
+    # 중복 제거 - 연속된 동일한 내용 제거
+    response = re.sub(r'(.+?)(\1)+', r'\1', response, flags=re.DOTALL)
+    
+    # 불필요한 마크다운 기호 정리
+    response = re.sub(r'#{3,}', '##', response)
+    response = re.sub(r'#{1,2}([^#\n]+)#{1,2}', r'## \1', response)
     
     # 양끝에 따옴표가 있는 경우 제거
     if len(response) >= 2:
@@ -209,6 +224,83 @@ def clean_ai_response(response):
     response = remove_unwanted_code_blocks(response)
     
     return response
+
+def apply_consistent_formatting(text):
+    """스트리밍과 비스트리밍 응답에 동일한 후처리 적용"""
+    if not text:
+        return text
+    
+    # 1. 기본 정리
+    cleaned = clean_ai_response(text)
+    
+    # 2. 마크다운 테이블 정규화
+    normalized = normalize_markdown_tables(cleaned)
+    
+    # 3. 코드 펜스 제거
+    unfenced = unfence_markdown_tables(normalized)
+    
+    # 4. 구조화 강화 - 제목 일관성 보장
+    structured = ensure_structured_format(unfenced)
+    
+    return structured
+
+def ensure_structured_format(text):
+    """응답의 구조화된 형식을 보장"""
+    if not text:
+        return text
+    
+    import re
+    
+    # 제목 레벨 정규화
+    text = re.sub(r'^#{4,}', '###', text, flags=re.MULTILINE)
+    
+    # 연속된 빈 줄 정리 (최대 2개)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # 제목 앞뒤 공백 정리
+    text = re.sub(r'\n(#{2,3})\s*', r'\n\1 ', text)
+    
+    # 불릿 포인트 정리
+    text = re.sub(r'\n-\s+', '\n- ', text)
+    
+    # 제목에서 이모지 완전 제거 (더 강력한 정규식)
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if line.strip().startswith('##') or line.strip().startswith('###'):
+            # 제목에서 이모지와 특수문자 제거, 텍스트만 남기기
+            cleaned_title = re.sub(r'^#{2,3}\s*[^\w\s가-힣]*\s*', '', line.strip())
+            cleaned_title = re.sub(r'^#{2,3}\s*', '', cleaned_title)
+            # 제목 레벨과 텍스트만 남기기
+            level = '##' if line.strip().startswith('##') else '###'
+            cleaned_line = f"{level} {cleaned_title}"
+            cleaned_lines.append(cleaned_line)
+        else:
+            cleaned_lines.append(line)
+    text = '\n'.join(cleaned_lines)
+    
+    # 표 정리 (파이프 앞뒤 공백)
+    lines = text.split('\n')
+    cleaned_lines = []
+    in_table = False
+    
+    for line in lines:
+        if '|' in line:
+            in_table = True
+            # 파이프 앞뒤 공백 정리
+            parts = line.split('|')
+            cleaned_parts = [part.strip() for part in parts]
+            cleaned_line = '|'.join(cleaned_parts)
+            cleaned_lines.append(cleaned_line)
+        else:
+            if in_table and line.strip() == '':
+                # 표 다음 빈 줄은 유지
+                cleaned_lines.append(line)
+            else:
+                cleaned_lines.append(line)
+            in_table = False
+    
+    return '\n'.join(cleaned_lines)
 
 def remove_unwanted_code_blocks(text: str) -> str:
     """일반 답변에서 잘못 사용된 코드 블록을 제거합니다."""
@@ -262,6 +354,7 @@ def _looks_like_code_or_json(content: str) -> bool:
         return True
     
     # 일반 텍스트로 판단 (한국어 포함, 마크다운 형식 등)
+    import re
     korean_chars = re.search(r'[가-힣]', content)
     markdown_patterns = re.search(r'^#+\s|^\*\s|^-\s|^\d+\.\s', content, re.MULTILINE)
     
@@ -390,3 +483,72 @@ def unfence_markdown_tables(text: str) -> str:
         return pattern.sub(replace_block, text)
     except Exception:
         return text
+
+# -----------------------
+# Parsing utilities (common)
+# -----------------------
+
+def extract_float_numbers(text: str, min_count: int = 0, min_value: float = 0.0, max_value: float = 0.0) -> list:
+    """문자열에서 실수/정수 숫자를 추출해 float 리스트로 반환.
+    - min_count: 최소 추출 개수 조건. 0이면 무시
+    - min_value/max_value: 값 범위 필터 (None이면 무시)
+    """
+    if not isinstance(text, str) or not text:
+        return []
+
+    import re
+    numbers = re.findall(r"-?\d+\.?\d*", text)
+    try:
+        floats = [float(n) for n in numbers]
+    except Exception:
+        floats = []
+
+    if min_value != 0.0 or max_value != 0.0:
+        filtered = []
+        for v in floats:
+            if (min_value == 0.0 or v >= min_value) and (max_value == 0.0 or v <= max_value):
+                filtered.append(v)
+        floats = filtered
+
+    if min_count and len(floats) < min_count:
+        return []
+
+    return floats
+
+def parse_time_info_from_text(text: str) -> dict:
+    """한국어 자연어에서 시간 정보를 추출해 딕셔너리로 반환.
+    지원: X분/시간/일 뒤|후|이후, 내일/다음날
+    반환 예: {"minutes": 30} 또는 {"hours": 2} 또는 {"days": 1}
+    """
+    if not isinstance(text, str) or not text:
+        return {}
+
+    import re
+    q = text.lower()
+    patterns = [
+        (r"(\d+)\s*분\s*(뒤|후|이후)", lambda m: {"minutes": int(m.group(1))}),
+        (r"(\d+)\s*시간\s*(뒤|후|이후)", lambda m: {"hours": int(m.group(1))}),
+        (r"(\d+)\s*일\s*(뒤|후|이후)", lambda m: {"days": int(m.group(1))}),
+        (r"내일|다음날", lambda m: {"tomorrow": True}),
+    ]
+
+    for pattern, extractor in patterns:
+        match = re.search(pattern, q)
+        if match:
+            return extractor(match)
+
+    return {}
+
+def time_info_to_minutes(info: dict) -> int:
+    """시간 정보 딕셔너리를 총 분(min) 단위로 변환.
+    지원 키: minutes/hours/days
+    """
+    if not isinstance(info, dict):
+        return 0
+    if 'minutes' in info and isinstance(info['minutes'], (int, float)):
+        return int(info['minutes'])
+    if 'hours' in info and isinstance(info['hours'], (int, float)):
+        return int(info['hours']) * 60
+    if 'days' in info and isinstance(info['days'], (int, float)):
+        return int(info['days']) * 24 * 60
+    return 0

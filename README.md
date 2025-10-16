@@ -1,312 +1,535 @@
 # 🌊 Agentic RAG - 지능형 수위 관리 시스템
 
-**Agentic RAG**는 AI 기반 문서 검색(RAG)과 IoT 수위 센서를 통합한 지능형 수위 관리 및 자동화 시스템입니다. Docker를 활용한 멀티 서비스 아키텍처로 구성되어 있으며, 실시간 수위 모니터링, 예측, 자동 제어 기능을 제공합니다.
+AI 기반 문서 검색(RAG)과 IoT 수위 센서를 통합한 지능형 수위 관리 및 자동화 시스템
 
-## 🚀 주요 특징
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-### 📚 AI 문서 검색 시스템
-- **벡터 임베딩**: Hugging Face `dragonkue/BGE-m3-ko` (1024차원) 모델 사용
-- **벡터 데이터베이스**: PostgreSQL + pgvector (L2 distance)
-- **문서 지원**: PDF, TXT, DOCX 자동 청크 분할 및 임베딩
-- **지능형 검색**: 의미론적 유사도 기반 문서 검색
-- **한글 최적화**: 나눔고딕 폰트 적용된 PDF 보고서 생성
+---
 
-### 🌊 수위 관리 시스템
-- **실시간 모니터링**: Arduino 기반 수위 센서 연동
-- **LSTM 예측**: 딥러닝을 통한 수위 예측 (최대 24시간)
-- **자동 제어**: 펌프 자동 제어 및 경보 시스템
+## 📖 목차
+
+- [주요 특징](#-주요-특징)
+- [빠른 시작](#-빠른-시작)
+- [시스템 구조](#-시스템-구조)
+- [환경 설정](#-환경-설정)
+- [사용 방법](#-사용-방법)
+- [기술 스택](#-기술-스택)
+- [문제 해결](#-문제-해결)
+
+---
+
+## ✨ 주요 특징
+
+### 📚 AI 문서 검색 (RAG)
+- **벡터 검색**: Hugging Face BGE-m3-ko 모델 (1024차원)
+- **PostgreSQL + pgvector**: 고성능 벡터 데이터베이스
+- **다중 형식 지원**: PDF, TXT, DOCX 자동 처리
+- **한글 최적화**: 한국어 임베딩 및 PDF 생성
+
+### 🌊 수위 관리
+- **실시간 모니터링**: Arduino 센서 연동
+- **LSTM 예측**: 딥러닝 기반 수위 예측 (최대 24시간)
+- **자동 제어**: 펌프 자동 제어 및 경보
 - **다중 배수지**: 가곡, 해룡, 상사 배수지 독립 관리
-- **그래프 시각화**: 실시간 수위 변화 그래프
 
-### 🤖 자율 자동화 시스템
-- **Agentic AI**: 자율적 의사결정 및 제어
-- **실시간 대응**: 위험 상황 자동 감지 및 대응
-- **로그 시스템**: 모든 자동화 활동 추적 및 기록
-- **원격 제어**: 웹 기반 펌프 제어 및 모니터링
+### 🤖 자율 자동화
+- **Agentic AI**: 자율적 의사결정 시스템
+- **실시간 대응**: 위험 상황 자동 감지 및 조치
+- **학습 기능**: 과거 데이터 기반 시스템 개선
+- **웹 대시보드**: 실시간 모니터링 및 제어
 
-## 🏗️ 시스템 아키텍처
-
-```
-사용자 → Streamlit UI (앱.py) → 오케스트레이터 → 도구들 → 저장소 → PostgreSQL
-                               ↓
-                        자율 자동화 시스템
-                               ↓
-                        Arduino 하드웨어
-```
-
-### 핵심 구성요소
-- **Frontend**: Streamlit 기반 웹 인터페이스
-- **Backend**: 비동기 서비스 및 데이터 처리
-- **Database**: PostgreSQL + pgvector (벡터 검색)
-- **AI Models**: LM Studio + LSTM + Embedding
-- **Hardware**: Arduino 기반 센서 및 펌프
-
-## 📁 프로젝트 구조
-
-```
-agentic_rag/
-├── 🎯 메인 애플리케이션
-│   ├── app.py                     # Streamlit 메인 UI
-│   ├── automation_dashboard.py    # 자동화 시스템 대시보드
-│   ├── water_dashboard.py         # 수위 모니터링 대시보드
-│   └── config.py                  # 시스템 설정
-├── 🧠 핵심 시스템
-│   ├── core/
-│   │   ├── orchestrator.py        # 요청 오케스트레이션
-│   │   ├── query_analyzer.py      # 쿼리 분석
-│   │   ├── response_generator.py  # 응답 생성
-│   │   └── tool_manager.py        # 도구 관리
-├── 🛠️ 도구 시스템
-│   ├── tools/
-│   │   ├── vector_search_tool.py           # 벡터 검색
-│   │   ├── water_level_prediction_tool.py  # 수위 예측
-│   │   ├── arduino_water_sensor_tool.py    # 아두이노 센서
-│   │   ├── water_level_monitoring_tool.py  # 수위 모니터링
-│   │   ├── automation_control_tool.py      # 자동화 제어
-│   │   ├── advanced_water_analysis_tool.py # 고급 수위 분석
-│   │   └── real_time_database_control_tool.py # 실시간 DB 제어
-├── 🤖 자동화 서비스
-│   ├── services/
-│   │   ├── automation_manager.py   # 자동화 관리
-│   │   ├── autonomous_agent.py     # 자율 에이전트
-│   │   ├── decision_engine.py      # 의사결정 엔진
-│   │   └── logging_system.py       # 로깅 시스템
-├── 💾 데이터 및 모델
-│   ├── storage/
-│   │   └── postgresql_storage.py   # PostgreSQL 연동
-│   ├── models/
-│   │   └── lm_studio.py           # LM Studio 클라이언트
-│   ├── lstm_model/
-│   │   └── lstm_water_level_model.h5 # LSTM 모델
-│   └── retrieval/
-│       └── document_loader.py      # 문서 로더
-├── 🔧 유틸리티
-│   ├── utils/
-│   │   ├── logger.py              # 로깅 유틸
-│   │   ├── pdf_generator.py       # PDF 생성
-│   │   ├── state_manager.py       # 상태 관리
-│   │   └── arduino_direct.py      # 아두이노 직접 통신
-├── 🐳 Docker 설정
-│   ├── docker-compose.yml         # 멀티 서비스 구성
-│   ├── Dockerfile                 # 컨테이너 빌드
-│   ├── docker/
-│   │   └── postgres/init.sql      # DB 초기화 스크립트
-│   └── scripts/                   # 실행 스크립트
-└── 📋 설정 파일
-    ├── requirements.txt           # Python 패키지
-    ├── requirements.lock.txt      # 고정 버전
-    └── ENV_EXAMPLE.txt           # 환경변수 템플릿
-```
+---
 
 ## 🚀 빠른 시작
 
-### 1. 시스템 요구사항
-- **Docker Desktop** (필수)
-- **LM Studio** (선택, 로컬 LLM 사용 시)
-- **Arduino 하드웨어** (선택, 실제 센서 사용 시)
-- **Python 3.12+** (개발 환경)
+### 필수 요구사항
 
-### 2. 환경 설정
+- **Docker Desktop** (필수)
+- **LM Studio** (선택 - 로컬 LLM 사용 시)
+- **Arduino 하드웨어** (선택 - 실제 센서 사용 시)
+
+### 설치 및 실행
+
 ```bash
-# 저장소 클론
-git clone [repository-url]
+# 1. 저장소 클론
+git clone <repository-url>
 cd agentic_rag
 
-# 환경변수 파일 생성
-cp ENV_EXAMPLE.txt .env
+# 2. 환경 변수 설정
+cp .env.example .env
+# .env 파일을 편집하여 필요한 설정 입력
 
-# .env 파일 편집 (필요한 토큰 및 설정 입력)
-```
-
-### 3. Docker 실행 (권장)
-```bash
-# 초기 실행 (볼륨 초기화)
-docker compose down -v
-docker compose build --no-cache
+# 3. Docker 실행
 docker compose up -d
 
-# 서비스 상태 확인
-docker compose ps
+# 4. 로그 확인
+docker compose logs -f
 ```
 
-### 4. 접속
-- **메인 대시보드**: http://localhost:8501
-- **자동화 대시보드**: http://localhost:8501 (페이지 전환)
+### 접속
 
-### 5. 기본 사용법
-1. **시스템 초기화**: 좌측 제어판에서 "시스템 초기화" 실행
-2. **문서 업로드**: 우측 "파일 업로드"로 PDF/TXT/DOCX 업로드
-3. **질의응답**: 중앙 채팅창에 질문 입력
-4. **수위 모니터링**: "수위 현황 보여줘", "그래프 그려줘" 등 명령
-5. **자동화 제어**: "자동화 시작해줘", "펌프1 켜줘" 등 명령
+- 🌐 **메인 대시보드**: http://localhost:8501
+- 🗄️ **PostgreSQL**: localhost:5432
 
-## ⚙️ 환경변수 설정
+### 초기 설정
 
-`.env` 파일 예시:
+1. 웹 브라우저에서 http://localhost:8501 접속
+2. 좌측 사이드바에서 "시스템 초기화" 클릭
+3. 문서 업로드 (PDF/TXT/DOCX)
+4. 질의응답 시작!
+
+---
+
+## 🏗️ 시스템 구조
+
+```
+┌─────────────────────────────────────┐
+│     사용자 (웹 브라우저)             │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│   Streamlit UI (포트 8501)          │
+│   - 메인 대시보드                    │
+│   - 자동화 제어판                    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│   Orchestrator (오케스트레이터)      │
+│   - 쿼리 분석                        │
+│   - 도구 관리                        │
+│   - 응답 생성                        │
+└──────────┬──────────────────────────┘
+           │
+    ┌──────┴──────┐
+    ▼             ▼
+┌─────────┐   ┌──────────────┐
+│  도구들  │   │ 자동화 시스템 │
+│  (9개)  │   │  - 의사결정   │
+└────┬────┘   └──────┬───────┘
+     │               │
+     └───────┬───────┘
+             ▼
+     ┌───────────────┐
+     │  PostgreSQL   │
+     │  + pgvector   │
+     └───────┬───────┘
+             │
+             ▼
+      ┌──────────┐
+      │ Arduino  │
+      └──────────┘
+```
+
+### 핵심 구성 요소
+
+| 구성 요소 | 설명 |
+|----------|------|
+| **Frontend** | Streamlit 웹 UI |
+| **Backend** | Python 비동기 서비스 |
+| **Database** | PostgreSQL + pgvector |
+| **AI Engine** | LM Studio + LSTM |
+| **Hardware** | Arduino 센서/펌프 |
+
+---
+
+## ⚙️ 환경 설정
+
+### .env 파일 설정
+
 ```env
 # LM Studio 설정
 LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1
-LM_STUDIO_API_KEY=lm-studio
 LM_STUDIO_MODEL_NAME=exaone-4.0-1.2b
+LM_STUDIO_API_KEY=lm-studio
 
 # 임베딩 설정
 EMBEDDING_BACKEND=HF
 EMBEDDING_MODEL_NAME=dragonkue/BGE-m3-ko
 EMBEDDING_DEVICE=cpu
-HUGGINGFACEHUB_API_TOKEN=your_hf_token
+HUGGINGFACEHUB_API_TOKEN=your_token_here
 
-# 데이터베이스 설정
+# PostgreSQL 설정
 PG_DB_HOST=postgres
 PG_DB_PORT=5432
 PG_DB_NAME=synergy
 PG_DB_USER=synergy
 PG_DB_PASSWORD=synergy
 
-# 활성화 도구 (쉼표로 구분)
-ENABLED_TOOLS=vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor,water_level_monitoring_tool,real_time_database_control_tool,advanced_water_analysis_tool,automation_control_tool
+# 활성화 도구
+ENABLED_TOOLS=vector_search_tool,list_files_tool,water_level_prediction_tool,arduino_water_sensor,water_level_monitoring_tool,real_time_database_control_tool,advanced_water_analysis_tool,automation_control_tool,smart_water_prediction
 
 # 기타 설정
 DEBUG_MODE=false
-OPENAI_API_KEY=your_openai_key
+LOG_LEVEL=INFO
+CHUNK_SIZE=1000
+TOP_K_RESULTS=5
 ```
 
-## 🛠️ 주요 기능
+### 주요 설정 옵션
 
-### 📖 문서 검색 및 QA
-- **벡터 검색**: "지난 분기 보고서에서 매출 관련 내용 찾아줘"
-- **파일 필터링**: "'프로젝트A.pdf' 파일에서 핵심 성과 요약해줘"
-- **태그 검색**: 특정 태그로 문서 분류 및 검색
+| 설정 | 기본값 | 설명 |
+|------|--------|------|
+| `CHUNK_SIZE` | 1000 | 문서 청크 크기 |
+| `CHUNK_OVERLAP` | 200 | 청크 오버랩 |
+| `TOP_K_RESULTS` | 5 | 검색 결과 개수 |
+| `MAX_TOKENS` | 2048 | 최대 응답 토큰 |
+| `RESPONSE_TEMPERATURE` | 0.7 | 응답 생성 온도 |
 
-### 🌊 수위 관리
-- **실시간 측정**: "현재 수위 알려줘"
-- **예측**: "앞으로 3시간 수위 예측해줘"
-- **모니터링**: "24시간 수위 그래프 그려줘"
-- **경보**: 위험 수위 자동 감지 및 알림
+---
 
-### 🔧 펌프 제어
-- **수동 제어**: "펌프1 켜줘", "펌프2 꺼줘"
-- **자동 제어**: 수위 기반 자동 펌프 작동
-- **상태 확인**: "펌프 상태 확인해줘"
+## 💬 사용 방법
 
-### 🤖 자동화 시스템
-- **시작/중지**: "자동화 시작해줘", "자율 시스템 꺼줘"
-- **상태 모니터링**: "자동화 상태 보여줘"
-- **로그 조회**: "최근 의사결정 로그 보여줘"
-- **하드웨어 진단**: "Arduino 연결 상태 확인해줘"
+### 문서 검색
+
+```
+"지난 분기 보고서에서 매출 관련 내용 찾아줘"
+"프로젝트A.pdf 파일에서 핵심 성과 요약해줘"
+```
+
+### 수위 관리
+
+```
+"현재 수위 알려줘"
+"가곡 배수지 30분 후 수위 예측해줘"
+"24시간 수위 그래프 그려줘"
+```
+
+### 펌프 제어
+
+```
+"펌프1 켜줘"
+"펌프2 꺼줘"
+"펌프 상태 확인해줘"
+```
+
+### 자동화 제어
+
+```
+"자동화 시작해줘"
+"자동화 상태 보여줘"
+"최근 의사결정 로그 보여줘"
+```
+
+---
 
 ## 🔧 기술 스택
 
 ### Backend
-- **Python 3.12+**: 메인 런타임
-- **Streamlit**: 웹 UI 프레임워크
-- **LangChain**: LLM 오케스트레이션
-- **PostgreSQL + pgvector**: 벡터 데이터베이스
-- **TensorFlow/Keras**: LSTM 수위 예측 모델
+- Python 3.12+
+- Streamlit (웹 UI)
+- LangChain (LLM 오케스트레이션)
+- PostgreSQL 15+ (데이터베이스)
+- pgvector (벡터 검색)
+- TensorFlow 2.x (LSTM 모델)
 
 ### AI/ML
-- **LM Studio**: 로컬 LLM 서버
-- **Hugging Face Transformers**: 임베딩 모델
-- **LSTM**: 시계열 수위 예측
-- **RAG (Retrieval-Augmented Generation)**: 문서 기반 QA
-
-### Hardware/IoT
-- **Arduino**: 수위 센서 및 펌프 제어
-- **Serial Communication**: USB 시리얼 통신
-- **Real-time Data Collection**: 실시간 센서 데이터 수집
+- LM Studio (로컬 LLM 서버)
+- Hugging Face Transformers (임베딩)
+- LSTM (시계열 예측)
+- RAG (문서 검색)
 
 ### DevOps
-- **Docker & Docker Compose**: 컨테이너화
-- **Multi-service Architecture**: 분리된 프론트엔드/백엔드
-- **Health Checks**: 서비스 상태 모니터링
+- Docker & Docker Compose
+- Multi-service Architecture
+- Health Checks
 
-## 🚨 트러블슈팅
+---
+
+## 🗂️ 프로젝트 구조
+
+```
+agentic_rag/
+├── app.py                      # Streamlit 메인 UI
+├── automation_dashboard.py     # 자동화 대시보드
+├── water_dashboard.py          # 수위 대시보드
+├── config.py                   # 시스템 설정
+├── run_backend.py              # 백엔드 실행
+│
+├── core/                       # 핵심 시스템
+│   ├── orchestrator.py         # 오케스트레이터
+│   ├── query_analyzer.py       # 쿼리 분석
+│   ├── tool_manager.py         # 도구 관리
+│   └── response_generator.py   # 응답 생성
+│
+├── tools/                      # 도구 시스템 (9개)
+│   ├── base_tool.py            # 베이스 클래스
+│   ├── vector_search_tool.py
+│   ├── water_level_prediction_tool.py
+│   ├── arduino_water_sensor_tool.py
+│   └── ...
+│
+├── services/                   # 자동화 서비스
+│   ├── automation_manager.py   # 자동화 관리
+│   ├── decision_engine.py      # 의사결정 엔진
+│   └── real_time_monitor.py    # 실시간 모니터
+│
+├── storage/                    # 데이터베이스
+│   └── postgresql_storage.py
+│
+├── utils/                      # 유틸리티
+│   ├── exceptions.py           # 커스텀 예외
+│   ├── logger.py               # 로깅
+│   └── ...
+│
+├── arduino/                    # Arduino 스케치
+│   └── sketch_jul26a11.ino
+│
+├── docker-compose.yml          # Docker 설정
+├── Dockerfile
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## 🔬 데이터베이스 스키마
+
+### files 테이블
+```sql
+CREATE TABLE files (
+    id SERIAL PRIMARY KEY,
+    filename VARCHAR(255) NOT NULL,
+    length INTEGER,
+    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB,
+    content BYTEA
+);
+```
+
+### chunks 테이블
+```sql
+CREATE TABLE chunks (
+    id SERIAL PRIMARY KEY,
+    file_id INTEGER REFERENCES files(id) ON DELETE CASCADE,
+    chunk_index INTEGER,
+    content TEXT,
+    embedding vector(1024),
+    metadata JSONB
+);
+
+CREATE INDEX idx_chunks_embedding ON chunks
+    USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
+```
+
+### water 테이블
+```sql
+CREATE TABLE water (
+    id SERIAL PRIMARY KEY,
+    reservoir_id VARCHAR(50),
+    current_level FLOAT,
+    pump1_status VARCHAR(10),
+    pump2_status VARCHAR(10),
+    measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## 🚨 문제 해결
 
 ### 임베딩 차원 오류
+
+**증상**: `dimension mismatch` 오류 발생
+
+**해결**:
 ```bash
-# 볼륨 초기화 (권장)
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
+```
+
+### Arduino 연결 문제
+
+**증상**: Arduino 디바이스를 찾을 수 없음
+
+**해결**:
+1. Windows 장치 관리자에서 COM 포트 확인
+2. `docker-compose.yml`에서 디바이스 매핑 확인
+```yaml
+devices:
+  - "/dev/ttyUSB0:/dev/ttyUSB0"  # Linux
+  - "COM3:COM3"                   # Windows
+```
+
+### 서비스 상태 확인
+
+```bash
+# 서비스 상태
+docker compose ps
+
+# 로그 확인
+docker compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f postgres
+
+# 재시작
+docker compose restart frontend
+```
+
+### 데이터베이스 연결 실패
+
+```bash
+# PostgreSQL 상태 확인
+docker compose exec postgres pg_isready -U synergy
+
+# 데이터베이스 접속 테스트
+docker compose exec postgres psql -U synergy -d synergy -c "SELECT 1;"
+```
+
+---
+
+## 🔄 Docker 명령어
+
+```bash
+# 시작
+docker compose up -d
+
+# 중단
+docker compose down
+
+# 완전 재시작 (볼륨 초기화)
 docker compose down -v
 docker compose build --no-cache
 docker compose up -d
 
-# 또는 수동 마이그레이션
-docker compose exec -T postgres psql -U synergy -d synergy -c "
-  DROP INDEX IF EXISTS idx_chunks_embedding;
-  ALTER TABLE chunks DROP COLUMN IF EXISTS embedding;
-  ALTER TABLE chunks ADD COLUMN embedding vector(1024);
-  CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
-"
-```
+# 로그 보기
+docker compose logs -f
 
-### Arduino 연결 문제
-```bash
-# 컨테이너 내에서 USB 디바이스 확인
-docker compose exec backend ls -la /dev/tty*
+# 특정 서비스만 재시작
+docker compose restart frontend
 
-# Windows에서 시리얼 포트 확인
-# 장치 관리자 → 포트(COM & LPT) 확인
-```
+# 컨테이너 접속
+docker compose exec frontend bash
+docker compose exec backend bash
+docker compose exec postgres bash
 
-### 서비스 상태 확인
-```bash
-# 모든 서비스 상태
-docker compose ps
-
-# 로그 확인
-docker compose logs frontend
-docker compose logs backend
-docker compose logs postgres
-
-# 헬스체크
-curl http://localhost:8501
-```
-
-### 메모리 부족
-```bash
-# 사용하지 않는 이미지 정리
-docker image prune -a
-
-# 볼륨 정리
-docker volume prune
-
-# 시스템 전체 정리
+# 리소스 정리
 docker system prune -a
 ```
 
-## 📊 데이터베이스 스키마
+---
 
-### files 테이블
-- 업로드된 파일 메타데이터 저장
-- 파일 이름, 크기, 업로드 시간 등
+## 💎 코드 품질
 
-### chunks 테이블
-- 문서 청크 및 임베딩 벡터 저장
-- 1024차원 벡터 (dragonkue/BGE-m3-ko)
+### 최근 리팩토링 (2025-10-13)
 
-### water 테이블
-- 실시간 수위 데이터 저장
-- 배수지별 수위, 펌프 상태, 측정 시간
+| 항목 | 현황 |
+|------|------|
+| **타입 힌팅** | 95% ✅ |
+| **Docstring** | 90% ✅ |
+| **커스텀 예외** | 13개 ✅ |
+| **베이스 클래스** | 완료 ✅ |
 
-### automation_logs 테이블
-- 자동화 시스템 로그 저장
-- 의사결정 과정, 실행 결과 추적
+상세 내용은 [REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md) 참조
+
+### 주요 개선사항
+
+1. **타입 안정성**: 모든 함수/메소드 타입 힌팅 완료
+2. **에러 처리**: 13개 커스텀 예외 클래스 도입
+3. **설정 검증**: 자동 설정 유효성 검사
+4. **문서화**: 상세한 docstring 추가
+
+---
+
+## 👨‍💻 개발 가이드
+
+### 로컬 개발 환경
+
+```bash
+# 가상환경 생성
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 개발 도구 설치
+pip install pylint black mypy pytest
+```
+
+### 코드 스타일
+
+- **PEP 8** 준수
+- **타입 힌팅** 필수
+- **Docstring** 필수 (Google 스타일)
+- **포맷팅**: `black`
+
+### 테스트
+
+```bash
+# 타입 체크
+mypy agentic_rag/
+
+# 린팅
+pylint agentic_rag/
+
+# 포맷팅
+black agentic_rag/
+
+# 테스트 실행
+pytest tests/
+```
+
+---
+
+## 📚 관련 문서
+
+- [리팩토링 요약](./REFACTORING_SUMMARY.md) - 코드 리팩토링 상세 내역
+- [Docker Compose 설정](./docker-compose.yml) - 컨테이너 구성
+- [환경 변수 예시](./.env.example) - 환경 설정 템플릿
+
+---
 
 ## 🤝 기여하기
 
 1. 이슈 생성 및 토론
-2. 포크 후 브랜치 생성
-3. 변경사항 커밋
-4. 풀 리퀘스트 생성
+2. 포크 후 브랜치 생성 (`git checkout -b feature/amazing-feature`)
+3. 변경사항 커밋 (`git commit -m 'feat: Add amazing feature'`)
+4. 푸시 (`git push origin feature/amazing-feature`)
+5. Pull Request 생성
 
-## 📜 라이선스
+### 커밋 메시지 규칙
 
-MIT License
-
-## 📞 지원
-
-- **이슈 등록**: GitHub Issues
-- **문서**: 프로젝트 Wiki
-- **개발자**: [개발팀 연락처]
+```
+feat: 새로운 기능 추가
+fix: 버그 수정
+docs: 문서 수정
+style: 코드 포맷팅
+refactor: 리팩토링
+test: 테스트 추가
+chore: 빌드/설정 변경
+```
 
 ---
 
-**Agentic RAG**는 AI, IoT, 자동화가 융합된 차세대 스마트 수위 관리 솔루션입니다. 🌊🤖✨
+## 📄 라이선스
+
+MIT License
+
+---
+
+## 🙏 감사의 글
+
+이 프로젝트는 다음 오픈소스를 활용합니다:
+
+- [LangChain](https://github.com/langchain-ai/langchain)
+- [Streamlit](https://github.com/streamlit/streamlit)
+- [PostgreSQL](https://www.postgresql.org/)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [Hugging Face](https://huggingface.co/)
+
+---
+
+<div align="center">
+
+**Agentic RAG** - AI, IoT, 자동화가 융합된 차세대 스마트 수위 관리 솔루션
+
+🌊 **Water Management** • 🤖 **AI Powered** • 🔧 **Full Automation**
+
+Made with ❤️
+
+</div>

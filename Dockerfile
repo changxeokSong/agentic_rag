@@ -7,13 +7,15 @@ ENV PIP_NO_CACHE_DIR=1 \
 
 WORKDIR /app
 
-# System dependencies for psycopg2 and build tools
+# System dependencies for psycopg2, build tools, and Arduino USB
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
     curl \
     git \
+    usbutils \
+    fonts-nanum \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies first (better layer caching)

@@ -27,6 +27,11 @@ class DirectArduinoComm:
         logger.info("아두이노 포트 검색 중...")
         
         import platform
+        # 0) 환경변수 우선
+        env_port = os.getenv('ARDUINO_SERIAL_PORT') or os.getenv('ARDUINO_PORT')
+        if env_port:
+            logger.info(f"환경변수에서 포트 감지: {env_port}")
+            return env_port
         
         # WSL2 환경 감지
         is_wsl = os.path.exists('/proc/version') and 'microsoft' in open('/proc/version').read().lower()
@@ -266,7 +271,10 @@ class DirectArduinoComm:
             water_levels = []
             start_time = time.time()
             
-            while len(water_levels) < 3 and (time.time() - start_time) < 10:
+            # 일부 보드에서 라인당 한 번만 출력하는 경우가 있어 단일 리딩도 허용
+            min_samples = 1 if channel is not None else 2
+            max_wait = 12  # 초
+            while len(water_levels) < min_samples and (time.time() - start_time) < max_wait:
                 if self.serial_connection.in_waiting > 0:
                     try:
                         raw_data = self.serial_connection.read(self.serial_connection.in_waiting)
@@ -292,6 +300,18 @@ class DirectArduinoComm:
                                         water_level = int(match.group(1))
                                         water_levels.append({'channel': 0, 'level': water_level})
                                         logger.info(f"수위 데이터: {water_level}%")
+                                # 더 느슨한 패턴: level: XX%, XX%, 또는 숫자만
+                                elif '%' in line and any(ch.isdigit() for ch in line):
+                                    nums = re.findall(r'(\d+)\s*%', line)
+                                    if nums:
+                                        water_level = int(nums[0])
+                                        water_levels.append({'channel': channel or 0, 'level': water_level})
+                                        logger.info(f"수위 데이터(느슨): {water_level}%")
+                                elif line.isdigit():
+                                    val = int(line)
+                                    if 0 <= val <= 100:
+                                        water_levels.append({'channel': channel or 0, 'level': val})
+                                        logger.info(f"수위 데이터(숫자): {val}%")
                     except Exception as e:
                         logger.warning(f"데이터 읽기 중 오류: {e}")
                         continue
@@ -310,6 +330,15 @@ class DirectArduinoComm:
                             "channel_levels": {channel: current_level},
                             "current_water_level": current_level,
                             "average_water_level": current_level
+                        }
+                    else:
+                        # 수신은 되었으나 해당 채널 라벨이 없을 때 마지막값을 사용
+                        last_level = water_levels[-1]['level']
+                        return {
+                            "success": True,
+                            "channel_levels": {channel: last_level},
+                            "current_water_level": last_level,
+                            "average_water_level": last_level
                         }
                 else:
                     # 전체 채널 요청

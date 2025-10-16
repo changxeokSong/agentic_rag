@@ -25,26 +25,21 @@ class DatabaseConnector:
             'password': PG_DB_PASSWORD
         }
         
-        # 배수지 정보 (water 테이블 기반)
+        # 배수지 정보 (water 테이블 기반) - 가곡/해룡만 사용
         self.reservoirs = {
             'gagok': {
                 'name': '가곡 배수지',
                 'level_col': 'gagok_water_level',
-                'pumps': ['gagok_pump_a', 'gagok_pump_b'],
+                'pumps': ['gagok_pump_a'],  # 현재 pump_a만 사용
                 'alert_threshold': 90.0
             },
             'haeryong': {
                 'name': '해룡 배수지',
                 'level_col': 'haeryong_water_level',
-                'pumps': ['haeryong_pump_a', 'haeryong_pump_b'],
+                'pumps': ['haeryong_pump_a'],  # 현재 pump_a만 사용
                 'alert_threshold': 85.0
-            },
-            'sangsa': {
-                'name': '상사 배수지',
-                'level_col': 'sangsa_water_level',
-                'pumps': ['sangsa_pump_a', 'sangsa_pump_b', 'sangsa_pump_c'],
-                'alert_threshold': 95.0
             }
+            # 상사 배수지는 더 이상 사용하지 않음 (DB에는 데이터 유지)
         }
         
         self.automation_logger = get_automation_logger()

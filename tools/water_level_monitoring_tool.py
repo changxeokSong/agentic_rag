@@ -29,9 +29,8 @@ class WaterLevelMonitor:
         
         # 배수지 정보 정의
         self.reservoirs = {
-            'gagok': {'name': '가곡 배수지', 'level_col': 'gagok_water_level', 'pumps': ['gagok_pump_a', 'gagok_pump_b']},
-            'haeryong': {'name': '해룡 배수지', 'level_col': 'haeryong_water_level', 'pumps': ['haeryong_pump_a', 'haeryong_pump_b']},
-            'sangsa': {'name': '상사 배수지', 'level_col': 'sangsa_water_level', 'pumps': ['sangsa_pump_a', 'sangsa_pump_b', 'sangsa_pump_c']}
+            'gagok': {'name': '가곡 배수지', 'level_col': 'gagok_water_level', 'pumps': ['gagok_pump_a']},
+            'haeryong': {'name': '해룡 배수지', 'level_col': 'haeryong_water_level', 'pumps': ['haeryong_pump_a']}
         }
         
     def _safe_datetime_convert(self, dt_value):
@@ -169,16 +168,18 @@ class WaterLevelMonitor:
                     
                     # 최신 시간에서 24시간을 빼기 (파이썬에서 계산)
                     try:
-                        latest_time_str = latest_result['latest_time']
-                        if isinstance(latest_time_str, str):
-                            # 문자열인 경우 datetime으로 변환
-                            latest_time = datetime.strptime(latest_time_str, '%Y-%m-%d %H:%M:%S')
+                        latest_time_val = latest_result['latest_time']
+                        if isinstance(latest_time_val, str):
+                            # ISO 8601 형식 ('T' 구분자) 처리
+                            if 'T' in latest_time_val:
+                                latest_time = datetime.fromisoformat(latest_time_val.replace('Z', '+00:00'))
+                            else:
+                                latest_time = datetime.strptime(latest_time_val, '%Y-%m-%d %H:%M:%S')
                         else:
                             # 이미 datetime 객체인 경우
-                            latest_time = latest_time_str
+                            latest_time = latest_time_val
                         
                         start_time = latest_time - timedelta(hours=hours)
-                        start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
                     except Exception as e:
                         logger.error(f"시간 계산 오류: {str(e)}")
                         return {
@@ -187,12 +188,12 @@ class WaterLevelMonitor:
                             'time_range_hours': hours
                         }
                     
-                    # 계산된 시간 범위로 데이터 조회
+                    # 계산된 시간 범위로 데이터 조회 (datetime 객체 직접 사용)
                     cur.execute("""
                         SELECT * FROM water 
                         WHERE measured_at >= %s 
                         ORDER BY measured_at;
-                    """, (start_time_str,))
+                    """, (start_time,))
                     
                     results = cur.fetchall()
                     
@@ -248,15 +249,37 @@ class WaterLevelMonitor:
             if not data_result['success']:
                 return data_result
             
+            # 그래프를 그리기에 데이터가 충분한지 확인
+            total_points = data_result.get('data_points', 0)
+            if total_points < 2:
+                return {
+                    'success': False,
+                    'error': '그래프 생성에 필요한 데이터 부족',
+                    'message': f'지난 {hours}시간 동안 수집된 데이터가 {total_points}개뿐입니다. 시간 경과에 따른 변화를 보여주는 그래프를 그리려면 최소 2개의 데이터 포인트가 필요합니다.'
+                }
+            
             data = data_result['data']
             
-            # 한글 폰트 설정
-            plt.rcParams['font.family'] = ['DejaVu Sans', 'Malgun Gothic', 'gulim']
+            # 한글 폰트 설정 (pdf_generator.py 참고)
+            import matplotlib.font_manager as fm
+            import os
+            
+            font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
+            if os.path.exists(font_path):
+                # 폰트 매니저에 폰트 추가
+                fm.fontManager.addfont(font_path)
+                # rcParams를 통해 전역으로 폰트 설정
+                plt.rcParams['font.family'] = 'NanumGothic'
+            else:
+                logger.warning(f"한글 폰트 파일({font_path})을 찾을 수 없습니다. 그래프의 한글이 깨질 수 있습니다.")
+                # 기본 폰트로 대체
+                plt.rcParams['font.family'] = 'DejaVu Sans'
+            
             plt.rcParams['axes.unicode_minus'] = False
             
-            # 그래프 생성 (3개 배수지)
-            fig, axes = plt.subplots(3, 1, figsize=(14, 12), facecolor='white')
-            colors = ['#2563eb', '#059669', '#dc2626']  # 파랑, 녹색, 빨강
+            # 그래프 생성 (2개 배수지)
+            fig, axes = plt.subplots(2, 1, figsize=(14, 9), facecolor='white')
+            colors = ['#2563eb', '#059669']  # 파랑, 녹색
             
             for i, (reservoir_name, records) in enumerate(data.items()):
                 ax = axes[i]
@@ -267,18 +290,19 @@ class WaterLevelMonitor:
                     continue
                 
                 # 데이터 준비
-                timestamps = pd.to_datetime([r['timestamp'] for r in records])
-                levels = [r['water_level'] for r in records]
+                # ISO8601 포맷으로 자동 파싱 (마이크로초 포함)
+                timestamps = pd.to_datetime([r['timestamp'] for r in records], format='ISO8601')
+                levels = [r['water_level'] for r in records] # DB에 이미 m 단위로 저장되어 있음
                 
                 # 수위 라인 그래프
                 ax.plot(timestamps, levels, color=colors[i], 
                        linewidth=2.5, label='수위', marker='o', markersize=3)
                 
-                # 경고 수위 라인 (100cm 기준)
+                # 경고 수위 라인 (m 단위)
                 ax.axhline(y=100, color='red', linestyle='--', 
-                          alpha=0.7, label='위험 수위 (100cm)')
+                          alpha=0.7, label='위험 수위 (100m)')
                 ax.axhline(y=80, color='orange', linestyle='--', 
-                          alpha=0.5, label='주의 수위 (80cm)')
+                          alpha=0.5, label='주의 수위 (80m)')
                 
                 # 펌프 가동 구간 표시
                 for j in range(len(records)):
@@ -291,7 +315,7 @@ class WaterLevelMonitor:
                 ax.set_title(f'{reservoir_name} 수위 현황 ({hours}시간)', 
                            fontsize=14, fontweight='bold', pad=15)
                 ax.set_xlabel('시간', fontsize=11)
-                ax.set_ylabel('수위 (cm)', fontsize=11)
+                ax.set_ylabel('수위 (m)', fontsize=11)
                 ax.grid(True, alpha=0.3)
                 ax.legend(loc='upper right', fontsize=9)
                 
@@ -304,12 +328,12 @@ class WaterLevelMonitor:
                 if levels:
                     min_level = min(levels)
                     max_level = max(levels)
-                    margin = max(10, (max_level - min_level) * 0.1)
+                    margin = max(10, (max_level - min_level) * 0.1) # 원래 margin 로직
                     ax.set_ylim(max(0, min_level - margin), max_level + margin)
             
             plt.suptitle('배수지 수위 모니터링', fontsize=16, fontweight='bold', y=0.98)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.95)
+            plt.subplots_adjust(top=0.92, hspace=0.4) # top 마진 조정 및 subplot 간격(hspace) 추가
             
             # 그래프를 이미지로 저장
             buffer = io.BytesIO()
@@ -349,9 +373,9 @@ class WaterLevelMonitor:
                 'image_base64': image_base64,
                 'time_range_hours': hours,
                 'time_range_display': time_range_display,
-                'reservoirs_count': 3,
+                'reservoirs_count': 2,
                 'data_points': data_result.get('data_points', 0),
-                'message': f'3개 배수지의 {hours}시간 수위 그래프 생성 완료\n시간 범위: {time_range_display}'
+                'message': f'2개 배수지의 {hours}시간 수위 그래프 생성 완료\n시간 범위: {time_range_display}'
             }
             
         except Exception as e:
@@ -434,19 +458,47 @@ class WaterLevelMonitor:
 def water_level_monitoring_tool(**kwargs):
     """수위 모니터링 도구 메인 함수 - synergy 데이터베이스의 water 테이블만 사용"""
     monitor = WaterLevelMonitor()
-    
+
     action = kwargs.get('action', 'current_status')
-    
+
     try:
         if action == 'current_status':
             return monitor.get_current_status()
-        
+
         elif action == 'historical_data':
             hours = kwargs.get('hours', 24)
+            # hours 파라미터 검증 (기본값: 24시간, 최대: 168시간)
+            if hours <= 0:
+                return {
+                    'success': False,
+                    'error': 'hours 파라미터는 0보다 커야 합니다',
+                    'available_range': '1 ~ 168 시간'
+                }
+            if hours > 168:
+                return {
+                    'success': False,
+                    'error': 'hours 파라미터는 최대 168시간(7일)까지 지원합니다',
+                    'available_range': '1 ~ 168 시간',
+                    'requested': hours
+                }
             return monitor.get_historical_data(hours)
-        
+
         elif action == 'generate_graph':
             hours = kwargs.get('hours', 24)
+            # hours 파라미터 검증 (기본값: 24시간, 최대: 168시간)
+            if hours <= 0:
+                return {
+                    'success': False,
+                    'error': 'hours 파라미터는 0보다 커야 합니다',
+                    'available_range': '1 ~ 168 시간'
+                }
+            if hours > 168:
+                return {
+                    'success': False,
+                    'error': 'hours 파라미터는 최대 168시간(7일)까지 지원합니다',
+                    'available_range': '1 ~ 168 시간',
+                    'requested': hours
+                }
             return monitor.generate_level_graph(hours)
         
         elif action == 'add_sample_data':

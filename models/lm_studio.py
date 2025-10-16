@@ -2,14 +2,23 @@
 
 import json
 import os
+import sys
 import re
 from openai import OpenAI
+
+# cv2 패키지와의 config.py 충돌 방지 - 프로젝트 루트를 우선 검색
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from config import (
-    LM_STUDIO_BASE_URL, 
-    LM_STUDIO_API_KEY, 
+    LM_STUDIO_BASE_URL,
+    LM_STUDIO_API_KEY,
     LM_STUDIO_MODEL_NAME,
     TOOL_SELECTION_TEMPERATURE,
-    RESPONSE_TEMPERATURE
+    RESPONSE_TEMPERATURE,
+    MAX_TOKENS,
+    REQUEST_TIMEOUT
 )
 from utils.logger import setup_logger
 from utils.helpers import retry
@@ -17,12 +26,12 @@ from utils.helpers import retry
 logger = setup_logger(__name__)
 
 class LMStudioClient:
-    """LM Studio API와 상호작용하는 클라이언트"""
-    
+    """LM Studio API와 상호작용하는 클라이언트 (스트리밍 지원)"""
+
     def __init__(self, base_url=None, api_key=None, model_name=None):
         """
         LM Studio 클라이언트를 초기화합니다.
-        
+
         Args:
             base_url (str, optional): API 기본 URL. 기본값은 환경변수에서 가져옵니다.
             api_key (str, optional): API 키. 기본값은 환경변수에서 가져옵니다.
@@ -31,38 +40,62 @@ class LMStudioClient:
         self.base_url = base_url or LM_STUDIO_BASE_URL
         self.api_key = api_key or LM_STUDIO_API_KEY
         self.model = model_name or LM_STUDIO_MODEL_NAME
-        
-        # API 클라이언트 초기화
+
+        # API 클라이언트 초기화 (타임아웃 설정)
         self.client = OpenAI(
             base_url=self.base_url,
-            api_key=self.api_key
+            api_key=self.api_key,
+            timeout=REQUEST_TIMEOUT
         )
-        
+
         logger.info(f"LM Studio 클라이언트 초기화: {self.model}, URL: {self.base_url}")
     
     @retry(max_retries=3)
-    def generate_response(self, prompt, temperature=None):
+    def generate_response(self, prompt, temperature=None, stream=True):
         """
         LM Studio 모델을 사용하여 응답을 생성합니다.
-        
+
         Args:
             prompt (str): 모델에 전달할 프롬프트
             temperature (float, optional): 응답의 온도(창의성). 기본값은 환경변수에서 가져옵니다.
-        
+            stream (bool, optional): 스트리밍 사용 여부. 기본값은 True (성능 개선).
+
         Returns:
-            str: 생성된 응답
+            Generator or str: 스트리밍 모드면 generator, 아니면 문자열
         """
         if temperature is None:
             temperature = RESPONSE_TEMPERATURE
-            
-        logger.info(f"LM Studio 응답 생성, 온도: {temperature}")
+
+        logger.info(f"LM Studio 응답 생성, 온도: {temperature}, 스트리밍: {stream}")
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            return response.choices[0].message.content
+            if stream:
+                # 스트리밍 모드: generator 반환
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=MAX_TOKENS,
+                    timeout=REQUEST_TIMEOUT,
+                    stream=True
+                )
+
+                # generator로 반환
+                def response_generator():
+                    for chunk in response:
+                        if chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+
+                return response_generator()
+            else:
+                # 기존 방식
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=MAX_TOKENS,
+                    timeout=REQUEST_TIMEOUT
+                )
+                return response.choices[0].message.content
         except Exception as e:
             logger.error(f"LM Studio 응답 생성 오류: {str(e)}")
             raise
@@ -72,19 +105,22 @@ class LMStudioClient:
         """
         LM Studio 모델을 사용하여 함수 호출을 실행합니다.
         텍스트 기반 도구 선택 방식을 사용합니다.
-        
+
         Args:
             prompt (str): 모델에 전달할 프롬프트
             functions (list): 사용 가능한 함수 정의 목록
             temperature (float, optional): 응답의 온도(창의성). 기본값은 환경변수에서 가져옵니다.
-        
+
         Returns:
             dict or None: 함수 호출 정보 (이름과 인자) 또는 함수 호출이 없는 경우 None
         """
         if temperature is None:
             temperature = TOOL_SELECTION_TEMPERATURE
-            
-        logger.info(f"LM Studio 텍스트 기반 도구 선택, 온도: {temperature}")
+
+        # 도구 선택은 짧은 JSON만 필요하므로 토큰 제한을 최소화
+        tool_selection_max_tokens = 128
+
+        logger.info(f"LM Studio 텍스트 기반 도구 선택, 온도: {temperature}, max_tokens: {tool_selection_max_tokens}")
         try:
             # 기존 OpenAI functions API 시도
             try:
@@ -93,7 +129,9 @@ class LMStudioClient:
                     messages=[{"role": "user", "content": prompt}],
                     functions=functions,
                     function_call="auto",
-                    temperature=temperature
+                    temperature=temperature,
+                    max_tokens=tool_selection_max_tokens,
+                    timeout=REQUEST_TIMEOUT
                 )
                 
                 message = response.choices[0].message
@@ -124,7 +162,9 @@ class LMStudioClient:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=temperature
+                    temperature=temperature,
+                    max_tokens=tool_selection_max_tokens,
+                    timeout=REQUEST_TIMEOUT
                 )
                 
                 content = response.choices[0].message.content
@@ -202,7 +242,7 @@ class LMStudioClient:
                 # 간단한 인자 파싱 (expression, query, location 등)
                 if not arguments:
                     for arg_name in ['expression', 'query', 'location', 'action', 'pump_id']:
-                        arg_match = re.search(f'"{arg_name}":\s*"([^"]*)"', content)
+                        arg_match = re.search(f'"{arg_name}":\\s*"([^"]*)"', content)
                         if arg_match:
                             arguments[arg_name] = arg_match.group(1)
                 

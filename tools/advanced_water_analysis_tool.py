@@ -42,6 +42,29 @@ class TimeParser:
             if re.search(pattern, expression):
                 return target_time
         
+        # 구체적인 날짜 패턴 (예: "2025년 10월 10일", "10월 10일")
+        date_patterns = [
+            r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일',  # 2025년 10월 10일
+            r'(\d{1,2})월\s*(\d{1,2})일',  # 10월 10일
+            r'(\d{4})-(\d{1,2})-(\d{1,2})',  # 2025-10-10
+            r'(\d{1,2})/(\d{1,2})/(\d{4})',  # 10/10/2025
+        ]
+        
+        for pattern in date_patterns:
+            match = re.search(pattern, expression)
+            if match:
+                groups = match.groups()
+                if len(groups) == 3:
+                    if len(groups[0]) == 4:  # 년도가 4자리
+                        year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                    else:  # 월/일/년 형식
+                        month, day, year = int(groups[0]), int(groups[1]), int(groups[2])
+                    
+                    try:
+                        return datetime(year, month, day, 12, 0, 0)  # 정오로 설정
+                    except ValueError:
+                        continue
+        
         # 구체적인 시간 패턴 (예: "오늘 9시", "내일 오후 3시")
         time_match = re.search(r'(\d{1,2})시', expression)
         if time_match:
@@ -102,8 +125,7 @@ class AdvancedWaterAnalyzer:
         
         self.reservoirs = {
             'gagok': {'name': '가곡 배수지', 'level_col': 'gagok_water_level', 'pumps': ['gagok_pump_a', 'gagok_pump_b']},
-            'haeryong': {'name': '해룡 배수지', 'level_col': 'haeryong_water_level', 'pumps': ['haeryong_pump_a', 'haeryong_pump_b']},
-            'sangsa': {'name': '상사 배수지', 'level_col': 'sangsa_water_level', 'pumps': ['sangsa_pump_a', 'sangsa_pump_b', 'sangsa_pump_c']}
+            'haeryong': {'name': '해룡 배수지', 'level_col': 'haeryong_water_level', 'pumps': ['haeryong_pump_a', 'haeryong_pump_b']}
         }
         
         self.time_parser = TimeParser()
@@ -168,7 +190,7 @@ class AdvancedWaterAnalyzer:
                     else:
                         slope = numerator / denominator
                     
-                    # 기울기를 시간당 변화량으로 변환 (cm/hour)
+                    # 기울기를 시간당 변화량으로 변환 (m/hour)
                     trend_per_hour = slope * 3600
                     
                     # 추세 분류
@@ -515,6 +537,97 @@ class AdvancedWaterAnalyzer:
         except Exception as e:
             logger.error(f"펌프 이력 조회 오류: {str(e)}")
             return {'success': False, 'error': str(e)}
+    
+    def get_period_stats(self, reservoir_id: str, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+        """특정 기간의 수위 통계 조회"""
+        try:
+            if reservoir_id not in self.reservoirs:
+                return {'success': False, 'error': f'존재하지 않는 배수지: {reservoir_id}'}
+            
+            config = self.reservoirs[reservoir_id]
+            
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    # 해당 기간의 수위 데이터 조회
+                    cur.execute(f"""
+                        SELECT measured_at, {config['level_col']} as water_level
+                        FROM water 
+                        WHERE measured_at >= %s AND measured_at <= %s
+                        AND {config['level_col']} IS NOT NULL
+                        ORDER BY measured_at ASC;
+                    """, (start_date, end_date))
+                    
+                    results = cur.fetchall()
+                    
+                    if not results:
+                        return {
+                            'success': False,
+                            'error': f'{start_date.strftime("%Y-%m-%d")}에 수위 데이터가 없습니다'
+                        }
+                    
+                    # 통계 계산
+                    levels = [float(row['water_level']) for row in results]
+                    timestamps = [row['measured_at'] for row in results]
+                    
+                    min_level = min(levels)
+                    max_level = max(levels)
+                    avg_level = mean(levels)
+                    std_level = stdev(levels) if len(levels) > 1 else 0
+                    
+                    # 최고/최저 수위 시점 찾기
+                    min_idx = levels.index(min_level)
+                    max_idx = levels.index(max_level)
+                    
+                    # 시간대별 통계 (시간당 평균)
+                    hourly_stats = {}
+                    for i, (timestamp, level) in enumerate(zip(timestamps, levels)):
+                        hour = timestamp.hour
+                        if hour not in hourly_stats:
+                            hourly_stats[hour] = []
+                        hourly_stats[hour].append(level)
+                    
+                    hourly_averages = {}
+                    for hour, hour_levels in hourly_stats.items():
+                        hourly_averages[hour] = round(mean(hour_levels), 2)
+                    
+                    return {
+                        'success': True,
+                        'reservoir_id': reservoir_id,
+                        'reservoir_name': config['name'],
+                        'period': {
+                            'start': start_date.strftime('%Y-%m-%d %H:%M:%S'),
+                            'end': end_date.strftime('%Y-%m-%d %H:%M:%S'),
+                            'duration_hours': round((end_date - start_date).total_seconds() / 3600, 2)
+                        },
+                        'statistics': {
+                            'data_points': len(results),
+                            'min_level': round(min_level, 2),
+                            'max_level': round(max_level, 2),
+                            'avg_level': round(avg_level, 2),
+                            'std_level': round(std_level, 2),
+                            'range': round(max_level - min_level, 2)
+                        },
+                        'extremes': {
+                            'min_level_time': timestamps[min_idx].strftime('%Y-%m-%d %H:%M:%S'),
+                            'max_level_time': timestamps[max_idx].strftime('%Y-%m-%d %H:%M:%S')
+                        },
+                        'hourly_averages': hourly_averages,
+                        'raw_data': [
+                            {
+                                'timestamp': row['measured_at'].strftime('%Y-%m-%d %H:%M:%S'),
+                                'water_level': round(float(row['water_level']), 2)
+                            }
+                            for row in results
+                        ]
+                    }
+                    
+        except Exception as e:
+            logger.error(f"기간 통계 조회 오류: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': '기간 통계 조회 중 오류 발생'
+            }
 
 def advanced_water_analysis_tool(**kwargs) -> Dict[str, Any]:
     """고급 수위 분석 도구 메인 함수"""
@@ -547,10 +660,37 @@ def advanced_water_analysis_tool(**kwargs) -> Dict[str, Any]:
             period1_end = kwargs.get('period1_end')
             period2_start = kwargs.get('period2_start')
             period2_end = kwargs.get('period2_end')
-            
+            time_expression = kwargs.get('time_expression', '').lower()
+
+            # 오전/오후 자동 비교 기능
+            # 기간이 명시되지 않은 경우 time_expression을 파싱하거나 오늘의 오전/오후 비교
             if not all([period1_start, period1_end, period2_start, period2_end]):
-                return {'success': False, 'error': '비교할 기간을 모두 지정해야 합니다'}
-            
+                now = datetime.now()
+
+                # time_expression에서 날짜 추출 (어제, 오늘, 그저께 등)
+                base_date = now
+                if '어제' in time_expression or 'yesterday' in time_expression:
+                    base_date = now - timedelta(days=1)
+                elif '그저께' in time_expression or '그제' in time_expression:
+                    base_date = now - timedelta(days=2)
+                elif '오늘' in time_expression or 'today' in time_expression:
+                    base_date = now
+                elif '내일' in time_expression or 'tomorrow' in time_expression:
+                    base_date = now + timedelta(days=1)
+
+                # 기준 날짜의 자정으로 설정
+                target_day = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+                # 오전 기간: 00:00 ~ 12:00
+                period1_start = target_day
+                period1_end = target_day.replace(hour=12, minute=0, second=0, microsecond=0)
+
+                # 오후 기간: 12:00 ~ 23:59
+                period2_start = target_day.replace(hour=12, minute=0, second=0, microsecond=0)
+                period2_end = target_day.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+                logger.info(f"오전/오후 자동 비교 모드 (time_expression: '{time_expression}'): 오전({period1_start} ~ {period1_end}) vs 오후({period2_start} ~ {period2_end})")
+
             return analyzer.compare_periods(reservoir_id, period1_start, period1_end, period2_start, period2_end)
         
         elif action == 'pump_history':
@@ -558,13 +698,60 @@ def advanced_water_analysis_tool(**kwargs) -> Dict[str, Any]:
             reservoir_id = kwargs.get('reservoir_id', 'gagok')
             start_time = kwargs.get('start_time')
             end_time = kwargs.get('end_time')
-            
-            if not start_time or not end_time:
-                # 기본값: 어제 전체
+            hours = kwargs.get('hours')
+            time_expression = kwargs.get('time_expression', '').lower()
+
+            # hours 파라미터가 있으면 우선 사용
+            if hours is not None:
                 end_time = datetime.now()
-                start_time = end_time - timedelta(days=1)
-            
+                start_time = end_time - timedelta(hours=hours)
+            elif time_expression:
+                # time_expression에서 날짜 범위 추출
+                now = datetime.now()
+                base_date = now
+
+                if '어제' in time_expression or 'yesterday' in time_expression:
+                    base_date = now - timedelta(days=1)
+                elif '그저께' in time_expression or '그제' in time_expression:
+                    base_date = now - timedelta(days=2)
+                elif '오늘' in time_expression or 'today' in time_expression:
+                    base_date = now
+                elif '내일' in time_expression or 'tomorrow' in time_expression:
+                    base_date = now + timedelta(days=1)
+
+                # 하루 전체 범위 설정
+                start_time = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_time = base_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+                logger.info(f"펌프 이력 조회 (time_expression: '{time_expression}'): {start_time} ~ {end_time}")
+            elif not start_time or not end_time:
+                # 기본값: 24시간
+                end_time = datetime.now()
+                start_time = end_time - timedelta(hours=24)
+
             return analyzer.get_pump_history(reservoir_id, start_time, end_time)
+        
+        elif action == 'get_period_stats':
+            # 특정 기간의 수위 통계 조회
+            reservoir_id = kwargs.get('reservoir_id', 'gagok')
+            start_date = kwargs.get('start_date')
+            end_date = kwargs.get('end_date')
+            time_expression = kwargs.get('time_expression', '')
+            
+            # 시간 표현 파싱
+            if time_expression:
+                parsed_time = analyzer.time_parser.parse_time_expression(time_expression)
+                if parsed_time:
+                    start_date = parsed_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                    end_date = parsed_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            if not start_date or not end_date:
+                return {
+                    'success': False,
+                    'error': '시작 날짜와 종료 날짜가 필요합니다'
+                }
+            
+            return analyzer.get_period_stats(reservoir_id, start_date, end_date)
         
         elif action == 'parse_time':
             # 시간 표현 파싱
@@ -590,7 +777,7 @@ def advanced_water_analysis_tool(**kwargs) -> Dict[str, Any]:
                 'error': f'알 수 없는 액션: {action}',
                 'available_actions': [
                     'current_trend', 'predict_alert', 'simulate_pump',
-                    'compare_periods', 'pump_history', 'parse_time'
+                    'compare_periods', 'pump_history', 'parse_time', 'get_period_stats'
                 ]
             }
             

@@ -15,5 +15,3 @@ textColor = "#262730"
 
 [runner]
 magicEnabled = true
-installTracer = false
-fixMatplotlib = true

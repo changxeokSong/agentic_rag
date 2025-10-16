@@ -67,32 +67,39 @@ class AutonomousAgent:
         self.system_prompt = """당신은 배수지 수위 관리 전문 AI 에이전트입니다.
 
 주요 역할:
-1. 4개 배수지(automation, reservoir_1, reservoir_2, reservoir_3)의 수위를 실시간 모니터링
-2. 위험 상황 감지 시 즉시 대응 조치 실행
-3. 예방적 관리를 통한 시스템 최적화
-4. 모든 의사결정을 로그에 기록
+1. '가곡'과 '해룡' 두 배수지의 수위를 실시간 모니터링합니다.
+2. 새로운 펌프 규칙에 따라 시스템을 최적화하고 위험 상황을 방지합니다.
 
-판단 기준:
-- 수위 95% 이상: 긴급 상황 (즉시 펌프 ON)
-- 수위 80-95%: 주의 상황 (펌프 AUTO 또는 ON)
-- 수위 20% 미만: 점검 필요 (펌프 OFF)
-- 펌프 연속 실패: 알림 발송
+펌프 정보 및 작동 규칙:
+- 펌프 1: 외부에서 '가곡' 배수지로 물을 채웁니다. 제어 시 `reservoir_id`를 'gagok'으로 설정해야 합니다.
+- 펌프 2: '가곡' 배수지에서 '해룡' 배수지로 물을 옮깁니다. 제어 시 `reservoir_id`를 'haeryong'으로 설정해야 합니다.
+
+제어 로직 (중요 - 각 배수지 독립 제어):
+
+**펌프 1 (가곡 배수지 급수):**
+- '가곡' 수위가 40m 미만이면 "펌프 1"을 켜십시오. (`reservoir_id: 'gagok'`, `action: 'PUMP_ON'`)
+- '가곡' 수위가 80m를 초과하면 "펌프 1"을 끄십시오. (`reservoir_id: 'gagok'`, `action: 'PUMP_OFF'`)
+
+**펌프 2 (해룡 배수지 급수):**
+- '해룡' 수위가 40m 미만이면 무조건 "펌프 2"를 켜십시오. (`reservoir_id: 'haeryong'`, `action: 'PUMP_ON'`)
+  → 가곡 수위는 신경쓰지 마세요. 가곡이 낮아지면 펌프 1이 자동으로 채웁니다.
+- '해룡' 수위가 80m를 초과하면 "펌프 2"를 끄십시오. (`reservoir_id: 'haeryong'`, `action: 'PUMP_OFF'`)
+  → 해룡 수위만 보고 판단하세요.
 
 응답 형식: JSON만 출력
 {
-  "decision": "판단 결과 (NORMAL/CAUTION/EMERGENCY/MAINTENANCE)",
+  "decision": "판단 결과 (PUMP_CONTROL, STABLE)",
   "actions": [
     {
-      "reservoir_id": "대상 배수지",
-      "action": "실행할 작업 (PUMP_ON/PUMP_OFF/PUMP_AUTO/ALERT)",
+      "reservoir_id": "gagok", // 또는 haeryong
+      "action": "PUMP_ON", // 또는 PUMP_OFF
       "reason": "판단 이유"
     }
   ],
-  "message": "상황 요약 메시지",
-  "priority": "우선순위 (LOW/MEDIUM/HIGH/CRITICAL)"
+  "message": "상황 요약 메시지"
 }
 
-현재 시스템 상태를 분석하고 필요한 조치를 결정하세요."""
+현재 시스템 상태를 분석하고 새로운 펌프 규칙에 따라 필요한 조치를 JSON 형식으로 결정하세요."""
 
     def start_monitoring(self):
         """자동화 모니터링 시작"""
@@ -426,41 +433,97 @@ class AutonomousAgent:
             # Arduino 도구 가져오기
             from utils.helpers import get_arduino_tool
             arduino_tool = get_arduino_tool()
-            
+
             if arduino_tool is None:
                 return {
                     "success": False,
                     "error": "Arduino 도구 초기화 실패",
                     "connection_status": "tool_import_failed"
                 }
-            
-            # Arduino 연결 상태 확인
+
+            # Arduino 연결 상태 확인 및 자동 연결 시도
             if not arduino_tool._is_connected():
-                self.automation_logger.warning(
-                    EventType.ERROR,
-                    reservoir_id,
-                    f"Arduino 연결되지 않음 - 펌프 제어 불가: {status}",
-                    {
-                        "requested_status": status,
-                        "reason": reason,
-                        "arduino_port": getattr(arduino_tool, 'arduino_port', 'Unknown'),
-                        "connection_attempt": False
+                logger.info(f"Arduino가 연결되지 않음. 자동 연결 시도 중...")
+
+                # 연결 시도
+                try:
+                    connect_result = arduino_tool.execute(action="connect")
+
+                    if connect_result and connect_result.get('success'):
+                        logger.info(f"Arduino 자동 연결 성공: {connect_result.get('port', 'Unknown')}")
+
+                        # 글로벌 상태 업데이트
+                        try:
+                            state_manager = get_state_manager()
+                            state = state_manager.load_state()
+                            state['arduino_connected'] = True
+                            state['arduino_port'] = connect_result.get('port')
+                            state['simulation_mode'] = (connect_result.get('port') == 'SIMULATION')
+                            state_manager.save_state(state)
+                            logger.info("Arduino 연결 상태를 글로벌 상태에 업데이트했습니다")
+                        except Exception as state_error:
+                            logger.warning(f"글로벌 상태 업데이트 실패: {state_error}")
+
+                        self.automation_logger.info(
+                            EventType.SYSTEM,
+                            reservoir_id,
+                            f"Arduino 자동 연결 성공",
+                            {
+                                "port": connect_result.get('port'),
+                                "connection_method": "auto_reconnect"
+                            }
+                        )
+                    else:
+                        # 연결 실패
+                        error_msg = connect_result.get('error', 'Arduino 연결 실패') if connect_result else 'Arduino 연결 실패'
+
+                        self.automation_logger.warning(
+                            EventType.ERROR,
+                            reservoir_id,
+                            f"Arduino 자동 연결 실패 - 펌프 제어 불가: {status}",
+                            {
+                                "requested_status": status,
+                                "reason": reason,
+                                "arduino_port": getattr(arduino_tool, 'arduino_port', 'Unknown'),
+                                "connection_attempt": True,
+                                "connection_error": error_msg
+                            }
+                        )
+
+                        return {
+                            "success": False,
+                            "error": f"Arduino 연결 실패: {error_msg}",
+                            "connection_status": "connection_failed",
+                            "port": getattr(arduino_tool, 'arduino_port', None),
+                            "suggestion": "Arduino USB 연결을 확인하거나 시스템 제어판에서 '시스템 초기화'를 다시 실행하세요"
+                        }
+
+                except Exception as conn_error:
+                    logger.error(f"Arduino 연결 시도 중 오류: {conn_error}")
+
+                    self.automation_logger.error(
+                        EventType.ERROR,
+                        reservoir_id,
+                        f"Arduino 연결 시도 중 예외 발생: {str(conn_error)}",
+                        {
+                            "requested_status": status,
+                            "reason": reason,
+                            "exception": str(conn_error)
+                        }
+                    )
+
+                    return {
+                        "success": False,
+                        "error": f"Arduino 연결 시도 중 오류: {str(conn_error)}",
+                        "connection_status": "connection_exception",
+                        "exception": str(conn_error)
                     }
-                )
-                
-                return {
-                    "success": False,
-                    "error": "Arduino가 연결되지 않았습니다",
-                    "connection_status": "disconnected",
-                    "port": getattr(arduino_tool, 'arduino_port', None),
-                    "suggestion": "시스템 제어판에서 '시스템 초기화'를 다시 실행하거나 Arduino 연결을 확인하세요"
-                }
             
             # 실제 펌프 명령 매핑 (reservoir_id에서 펌프 번호 추출)
-            if reservoir_id.endswith('_1') or '1' in reservoir_id:
+            if reservoir_id.endswith('_1') or 'gagok' in reservoir_id:
                 pump_action = f"pump1_{'on' if status == 'ON' else 'off'}"
                 pump_id = 1
-            elif reservoir_id.endswith('_2') or '2' in reservoir_id:
+            elif reservoir_id.endswith('_2') or 'haeryong' in reservoir_id:
                 pump_action = f"pump2_{'on' if status == 'ON' else 'off'}"
                 pump_id = 2
             else:

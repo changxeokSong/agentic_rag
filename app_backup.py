@@ -275,59 +275,6 @@ def close_pdf_modal():
     st.session_state.pdf_preview = None
     st.session_state.show_pdf_modal = False
 
-def render_pdf_download_button(content: str, key_prefix: str = "pdf"):
-    """PDF 다운로드 버튼 렌더링 (재사용 가능)"""
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    try:
-        from utils.pdf_generator import MarkdownToPDFConverter, is_pdf_available
-
-        if is_pdf_available():
-            pdf_converter = MarkdownToPDFConverter()
-            filename = f"agentic_rag_report_{timestamp_str}.pdf"
-            pdf_bytes = pdf_converter.convert_markdown_to_pdf(content, filename)
-            st.download_button(
-                label="📄 PDF 다운로드",
-                data=pdf_bytes,
-                file_name=filename,
-                mime="application/pdf",
-                key=f"{key_prefix}_{timestamp_str}"
-            )
-        else:
-            filename = f"agentic_rag_report_{timestamp_str}.txt"
-            text_bytes = content.encode('utf-8')
-            st.download_button(
-                label="📝 텍스트 저장",
-                data=text_bytes,
-                file_name=filename,
-                mime="text/plain",
-                key=f"{key_prefix}_txt_{timestamp_str}"
-            )
-    except Exception as e:
-        logger.error(f"다운로드 버튼 생성 오류: {str(e)}")
-
-def render_tool_results(tool_results: dict):
-    """도구 실행 결과 표시 (재사용 가능)"""
-    if not tool_results:
-        return
-
-    with st.expander("🔍 도구 실행 결과", expanded=False):
-        for tool_name, result in tool_results.items():
-            st.subheader(f"🛠️ {tool_name}")
-            if isinstance(result, dict):
-                if 'success' in result:
-                    status = "✅ 성공" if result.get('success') else "❌ 실패"
-                    st.markdown(f"**상태:** {status}")
-                if 'message' in result:
-                    st.markdown(f"**결과:** {result['message']}")
-                if 'temperature_c' in result:
-                    st.markdown(f"**🌡️ 기온:** {result['temperature_c']}°C")
-                if 'humidity' in result:
-                    st.markdown(f"**💧 습도:** {result['humidity']}%")
-                with st.expander("전체 데이터", expanded=False):
-                    st.json(result)
-            else:
-                st.write(str(result))
-
 def render_pdf_modal():
     if not st.session_state.get('show_pdf_modal'):
         return
@@ -532,96 +479,75 @@ def main():
         max-width: 1400px;
     }
     
-    /* === 채팅 메시지 기본 스타일 (명확한 구분) === */
+    /* 채팅 컨테이너 배경 */
     .stChatMessage {
-        border-radius: 12px !important;
-        padding: 16px 20px !important;
+        background: none !important;
+        border: none !important;
+        box-shadow: none !important;
         margin: 12px 0 !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
-        transition: all 0.2s ease !important;
+        padding: 0 !important;
         position: relative !important;
     }
-
-    .stChatMessage:hover {
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
+    
+    /* 사용자 메시지 - 카카오톡 노란색 말풍선 (오른쪽) */
+    .stChatMessage[data-testid="chat-message-user"] {
+        display: flex !important;
+        justify-content: flex-end !important;
+        margin-bottom: 8px !important;
     }
-
-    /* 사용자 메시지 - 주황색 강조 */
-    .stChatMessage[data-testid="chat-message-user"],
-    .stChatMessage[data-testid*="user"] {
-        background: #fffbf0 !important;
-        border: 1px solid #fed7aa !important;
-        border-left: 4px solid #f59e0b !important;
-    }
-
-    .stChatMessage[data-testid="chat-message-user"]:hover,
-    .stChatMessage[data-testid*="user"]:hover {
-        background: #fff7e6 !important;
-        border-left-color: #d97706 !important;
-    }
-
-    /* AI 메시지 - 파란색 강조 */
-    .stChatMessage[data-testid="chat-message-assistant"],
-    .stChatMessage[data-testid*="assistant"] {
-        background: #f0f4ff !important;
-        border: 1px solid #c7d2fe !important;
-        border-left: 4px solid #667eea !important;
-    }
-
-    .stChatMessage[data-testid="chat-message-assistant"]:hover,
-    .stChatMessage[data-testid*="assistant"]:hover {
-        background: #e0e7ff !important;
-        border-left-color: #5568d3 !important;
-    }
-
-    /* 아바타 아이콘 스타일 */
-    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
-    }
-
-    .stChatMessage [data-testid="chatAvatarIcon-user"] {
-        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
-        box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4) !important;
-    }
-
-    /* 테이블 스타일 */
-    .stChatMessage .stMarkdown table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        margin: 20px 0 !important;
-        border: 1px solid #e5e7eb !important;
-        border-radius: 8px !important;
-        overflow: hidden !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-    }
-
-    .stChatMessage .stMarkdown th {
-        background: #f9fafb !important;
-        color: #111827 !important;
-        padding: 14px 18px !important;
-        text-align: left !important;
-        font-weight: 600 !important;
+    
+    .stChatMessage[data-testid="chat-message-user"] .stMarkdown {
+        background: var(--user-bubble) !important;
+        color: var(--text-dark) !important;
+        padding: 12px 16px !important;
+        border-radius: 18px 4px 18px 18px !important;
+        max-width: 70% !important;
+        box-shadow: 0 2px 8px var(--bubble-shadow) !important;
         font-size: 14px !important;
-        border-bottom: 2px solid #e5e7eb !important;
+        line-height: 1.4 !important;
+        margin: 0 !important;
+        position: relative !important;
+        word-break: break-word !important;
     }
-
-    .stChatMessage .stMarkdown td {
-        padding: 14px 18px !important;
-        border-bottom: 1px solid #f3f4f6 !important;
+    
+    /* AI 메시지 - 흰색 말풍선 (왼쪽) */
+    .stChatMessage[data-testid="chat-message-assistant"] {
+        display: flex !important;
+        justify-content: flex-start !important;
+        margin-bottom: 8px !important;
+        align-items: flex-start !important;
+    }
+    
+    .stChatMessage[data-testid="chat-message-assistant"]::before {
+        content: "🤖";
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px !important;
+        font-size: 18px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stChatMessage[data-testid="chat-message-assistant"] .stMarkdown {
+        background: var(--ai-bubble) !important;
+        color: var(--text-dark) !important;
+        padding: 12px 16px !important;
+        border-radius: 4px 18px 18px 18px !important;
+        max-width: 70% !important;
+        box-shadow: 0 2px 8px var(--bubble-shadow) !important;
+        border: 1px solid var(--border-light) !important;
         font-size: 14px !important;
-        color: #374151 !important;
-        background: white !important;
+        line-height: 1.5 !important;
+        margin: 0 !important;
+        position: relative !important;
+        word-break: break-word !important;
     }
-
-    .stChatMessage .stMarkdown tr:last-child td {
-        border-bottom: none !important;
-    }
-
-    .stChatMessage .stMarkdown tr:hover td {
-        background: #f9fafb !important;
-    }
-
+    
     /* 생각 중 메시지 스타일 - 채팅창 내에서만 적용 */
     .thinking-bubble {
         background: #f5f5f5 !important;
@@ -763,206 +689,7 @@ def main():
         border-color: #444444;
         color: #ffffff;
     }
-
-    /* 3단 레이아웃 컬럼 정렬 - 강력한 상단 정렬 */
-    [data-testid="column"] {
-        vertical-align: top !important;
-        align-items: flex-start !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
-
-    /* 컬럼 간격 조정 */
-    .main .block-container [data-testid="stHorizontalBlock"] {
-        gap: 1rem !important;
-        align-items: flex-start !important;
-    }
-
-    /* 컬럼 내부 요소들 상단 정렬 */
-    [data-testid="column"] > div {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: stretch !important;
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-    }
-
-    /* 모든 컬럼의 첫 번째 element-container 상단 여백 제거 */
-    [data-testid="column"] > div > div[data-testid="element-container"]:first-child {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-
-    /* 모든 컨테이너 통일 스타일 및 간격 */
-    [data-testid="stVerticalBlock"] > div > div[data-testid="stVerticalBlock"] {
-        gap: 0.5rem !important;
-    }
-
-    /* border=True 컨테이너들의 상단 정렬 강제 */
-    [data-testid="column"] [data-testid="stVerticalBlock"]:has(> div[style*="border"]) {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-
-    /* 컨테이너 border 통일 및 정렬 */
-    div[data-testid="stVerticalBlock"] > div > div[data-testid="element-container"] > div > div {
-        border-radius: 8px !important;
-    }
-
-    /* 모든 컬럼 내부의 컨테이너를 같은 위치에서 시작 */
-    [data-testid="column"] > div[data-testid="stVerticalBlock"] > div:first-child {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-
-    /* 모든 border=True 컨테이너를 같은 높이에서 시작 */
-    [data-testid="column"] > div > div:first-child [data-testid="stVerticalBlock"] {
-        margin-top: 0 !important;
-    }
-
-    /* element-container 내부 여백 제거 */
-    [data-testid="column"] > div > div[data-testid="element-container"]:first-of-type {
-        padding-top: 0 !important;
-    }
-
-    /* === 컬럼 정렬 개선 === */
-    /* 모든 컬럼을 상단 정렬 */
-    section[data-testid="stHorizontalBlock"] {
-        align-items: flex-start !important;
-    }
-
-    /* 모든 컬럼의 직접 자식 요소 상단 여백 제거 */
-    [data-testid="column"] > div[data-testid="stVerticalBlock"] {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: stretch !important;
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-
-    /* 컬럼 내부의 모든 첫 번째 요소 정렬 */
-    [data-testid="column"] > div[data-testid="stVerticalBlock"] > div:first-child,
-    [data-testid="column"] > div > div:first-child,
-    section[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div > div:first-child {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
-
-    /* === 채팅 입력창 스타일 통합 개선 === */
-    /* 중앙 컬럼 전체를 하나의 통합된 채팅 영역으로 표시 */
-    [data-testid="column"]:nth-child(2) > div[data-testid="stVerticalBlock"] {
-        background: white !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-        padding: 0 !important;
-    }
-
-    /* 중앙 컬럼의 채팅 컨테이너 - 상단 모서리만 둥글게 */
-    [data-testid="column"]:nth-child(2) [data-testid="stVerticalBlock"] > div[style*="border"] {
-        border-radius: 8px 8px 0 0 !important;
-        border-bottom: none !important;
-        margin-bottom: 0 !important;
-        max-height: calc(100vh - 280px) !important;
-        overflow-y: auto !important;
-        padding: 1rem !important;
-        border: 1px solid #e5e7eb !important;
-    }
-
-    /* 채팅 입력창 - 컨테이너와 완벽하게 통합 */
-    .stChatInput {
-        margin: 0 !important;
-        padding: 0 !important;
-        background: white !important;
-    }
-
-    /* 중앙 컬럼의 채팅 입력창 - 하단 모서리만 둥글게 */
-    [data-testid="column"]:nth-child(2) .stChatInput {
-        border-radius: 0 0 8px 8px !important;
-        margin: 0 !important;
-        padding: 12px 16px !important;
-        border: 1px solid #e5e7eb !important;
-        border-top: none !important;
-    }
-
-    /* 입력창 내부 요소 스타일 개선 */
-    [data-testid="column"]:nth-child(2) .stChatInput input {
-        border: none !important;
-        box-shadow: none !important;
-    }
-
-    /* 입력창 전송 버튼 스타일 */
-    [data-testid="column"]:nth-child(2) .stChatInput button {
-        background: #667eea !important;
-        border-radius: 6px !important;
-    }
-
-    [data-testid="column"]:nth-child(2) .stChatInput button:hover {
-        background: #5568d3 !important;
-    }
-
-    /* 채팅 컨테이너 스크롤 부드럽게 */
-    [data-testid="stVerticalBlock"]:has(.stChatMessage) {
-        scroll-behavior: smooth !important;
-        overflow-y: auto !important;
-    }
-
-    /* 메시지 추가 시 애니메이션 */
-    .stChatMessage {
-        animation: fadeInUp 0.3s ease-in-out !important;
-    }
-
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* 채팅 컨테이너 최대 높이 설정 */
-    [data-testid="stVerticalBlock"] > div[style*="border"] {
-        max-height: calc(100vh - 250px) !important;
-        overflow-y: auto !important;
-    }
     </style>
-    <script>
-    // 컬럼 정렬 강제 적용 (개선된 버전)
-    function alignColumns() {
-        // 모든 컬럼을 상단 정렬
-        const horizontalBlock = document.querySelector('[data-testid="stHorizontalBlock"]');
-        if (horizontalBlock) {
-            horizontalBlock.style.alignItems = 'flex-start';
-        }
-
-        // 각 컬럼의 첫 번째 요소들 정렬
-        const columns = document.querySelectorAll('[data-testid="column"]');
-        columns.forEach(col => {
-            // 컬럼의 직접 자식들 정렬
-            const verticalBlock = col.querySelector('[data-testid="stVerticalBlock"]');
-            if (verticalBlock) {
-                verticalBlock.style.marginTop = '0';
-                verticalBlock.style.paddingTop = '0';
-
-                // 첫 번째 자식 요소들 정렬
-                const firstChild = verticalBlock.querySelector('> div:first-child');
-                if (firstChild) {
-                    firstChild.style.marginTop = '0';
-                    firstChild.style.paddingTop = '0';
-                }
-            }
-        });
-    }
-
-    // 페이지 로드 시 실행
-    setTimeout(alignColumns, 100);
-
-    // Streamlit 리렌더링 감지 및 재정렬
-    const observer = new MutationObserver(alignColumns);
-    observer.observe(document.body, { childList: true, subtree: true });
-    </script>
     """, unsafe_allow_html=True)
 
     # --- 헤더 (전체 화면 폭에 맞게 수정) ---
@@ -975,306 +702,37 @@ def main():
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # ===== 메시지 렌더링 헬퍼 함수들 (전역으로 정의) =====
-    def render_message_styles():
-        """스트리밍 포맷 기준 통일 스타일 - 깔끔한 하얀 배경"""
-        st.markdown("""
-        <style>
-        /* 채팅 컨테이너 배경 - 하얀색 */
-        [data-testid="stVerticalBlock"] > div:has(.stChatMessage) {
-            background: white !important;
-        }
-
-        .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
-        }
-
-        .stChatMessage [data-testid="chatAvatarIcon-user"] {
-            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
-            box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4) !important;
-        }
-
-        /* 메시지 내용 스타일 향상 */
-        .stChatMessage .stMarkdown {
-            font-size: 15px !important;
-            line-height: 1.7 !important;
-            color: #1f2937 !important;
-        }
-
-        .stChatMessage .stMarkdown p {
-            margin: 14px 0 !important;
-            font-size: 15px !important;
-            line-height: 1.7 !important;
-            color: #374151 !important;
-        }
-
-        .stChatMessage .stMarkdown h1,
-        .stChatMessage .stMarkdown h2 {
-            font-size: 22px !important;
-            margin: 24px 0 16px 0 !important;
-            color: #111827 !important;
-            border-bottom: 2px solid #e5e7eb !important;
-            padding-bottom: 10px !important;
-            font-weight: 700 !important;
-        }
-
-        .stChatMessage .stMarkdown h3 {
-            font-size: 18px !important;
-            margin: 20px 0 12px 0 !important;
-            color: #1f2937 !important;
-            font-weight: 600 !important;
-        }
-
-        .stChatMessage .stMarkdown h4,
-        .stChatMessage .stMarkdown h5,
-        .stChatMessage .stMarkdown h6 {
-            font-size: 16px !important;
-            margin: 16px 0 10px 0 !important;
-            color: #374151 !important;
-            font-weight: 600 !important;
-        }
-
-        .stChatMessage .stMarkdown ul,
-        .stChatMessage .stMarkdown ol {
-            margin: 14px 0 !important;
-            padding-left: 28px !important;
-        }
-
-        .stChatMessage .stMarkdown li {
-            font-size: 15px !important;
-            line-height: 1.7 !important;
-            margin: 8px 0 !important;
-            color: #374151 !important;
-        }
-
-        .stChatMessage .stMarkdown li::marker {
-            color: #9ca3af !important;
-        }
-
-        /* 테이블 스타일 */
-        .stChatMessage .stMarkdown table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            margin: 20px 0 !important;
-            border: 1px solid #e5e7eb !important;
-            border-radius: 8px !important;
-            overflow: hidden !important;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-        }
-
-        .stChatMessage .stMarkdown th {
-            background: #f9fafb !important;
-            color: #111827 !important;
-            padding: 14px 18px !important;
-            text-align: left !important;
-            font-weight: 600 !important;
-            font-size: 14px !important;
-            border-bottom: 2px solid #e5e7eb !important;
-        }
-
-        .stChatMessage .stMarkdown td {
-            padding: 14px 18px !important;
-            border-bottom: 1px solid #f3f4f6 !important;
-            font-size: 14px !important;
-            color: #374151 !important;
-            background: white !important;
-        }
-
-        .stChatMessage .stMarkdown tr:last-child td {
-            border-bottom: none !important;
-        }
-
-        .stChatMessage .stMarkdown tr:hover td {
-            background: #f9fafb !important;
-        }
-
-        /* 인라인 코드 스타일 */
-        .stChatMessage .stMarkdown code {
-            background: #f3f4f6 !important;
-            padding: 3px 7px !important;
-            border-radius: 6px !important;
-            font-size: 14px !important;
-            color: #dc2626 !important;
-            font-family: 'SF Mono', 'Monaco', 'Menlo', monospace !important;
-            font-weight: 500 !important;
-        }
-
-        /* 코드 블록 스타일 */
-        .stChatMessage .stMarkdown pre {
-            background: #1f2937 !important;
-            padding: 18px !important;
-            border-radius: 10px !important;
-            overflow-x: auto !important;
-            margin: 18px 0 !important;
-            border: 1px solid #374151 !important;
-        }
-
-        .stChatMessage .stMarkdown pre code {
-            background: transparent !important;
-            color: #f3f4f6 !important;
-            padding: 0 !important;
-            font-size: 14px !important;
-        }
-
-        /* 텍스트 강조 스타일 */
-        .stChatMessage .stMarkdown strong {
-            font-weight: 700 !important;
-            color: #111827 !important;
-        }
-
-        .stChatMessage .stMarkdown em {
-            font-style: italic !important;
-            color: #6b7280 !important;
-        }
-
-        /* 구분선 스타일 */
-        .stChatMessage .stMarkdown hr {
-            margin: 28px 0 !important;
-            border: none !important;
-            height: 1px !important;
-            background: #e5e7eb !important;
-        }
-
-        /* 인용구 스타일 */
-        .stChatMessage .stMarkdown blockquote {
-            border-left: 4px solid #667eea !important;
-            padding: 12px 20px !important;
-            margin: 18px 0 !important;
-            background: #f9fafb !important;
-            color: #4b5563 !important;
-            border-radius: 0 8px 8px 0 !important;
-        }
-
-        /* 다운로드 버튼 스타일 */
-        .stChatMessage .stDownloadButton button {
-            background: #667eea !important;
-            color: white !important;
-            border: none !important;
-            padding: 10px 20px !important;
-            border-radius: 8px !important;
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            transition: all 0.2s ease !important;
-        }
-
-        .stChatMessage .stDownloadButton button:hover {
-            background: #5568d3 !important;
-            transform: translateY(-1px) !important;
-        }
-
-        /* 상태 표시기 (st.status) 스타일 */
-        .stChatMessage .stStatus {
-            background: #f9fafb !important;
-            border: 1px solid #e5e7eb !important;
-            border-radius: 8px !important;
-            margin-bottom: 14px !important;
-        }
-
-        .stChatMessage .stStatus > details > summary {
-            font-size: 14px !important;
-            color: #667eea !important;
-            font-weight: 600 !important;
-            padding: 10px !important;
-        }
-
-        /* expander 스타일 개선 */
-        .stChatMessage .stExpander {
-            border: 1px solid #e5e7eb !important;
-            border-radius: 8px !important;
-            background: #f9fafb !important;
-            margin: 12px 0 !important;
-        }
-
-        .stChatMessage .stExpander > details > summary {
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            color: #4b5563 !important;
-            padding: 12px !important;
-        }
-
-        /* caption (타임스탬프) 스타일 */
-        .stChatMessage [data-testid="stCaptionContainer"] {
-            color: #9ca3af !important;
-            font-size: 13px !important;
-            margin-top: 12px !important;
-            font-weight: 500 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-    def render_user_message(message):
-        """사용자 메시지 렌더링 - st.chat_message 사용 (대화창 스타일)"""
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(message["content"])
-
-            if message.get("timestamp"):
-                st.caption(f"🕐 {message['timestamp']}")
-
-    def render_assistant_message(message):
-        """어시스턴트 메시지 렌더링 - st.chat_message 사용 (스트리밍과 동일)"""
-        with st.chat_message("assistant", avatar="🤖"):
-            # 메시지 내용 표시 (마크다운 형식, 일관된 렌더링)
-            content = message["content"]
-
-            # 메시지가 이미 포맷팅되어 있으므로 그대로 표시
-            # unsafe_allow_html=False로 보안 유지
-            st.markdown(content)
-
-            # 타임스탬프와 처리시간
-            timestamp_parts = []
-            if message.get("timestamp"):
-                timestamp_parts.append(f"🕐 {message['timestamp']}")
-            if message.get("processing_time"):
-                timestamp_parts.append(f"⚡ {message['processing_time']}")
-
-            if timestamp_parts:
-                st.caption(" | ".join(timestamp_parts))
-
-            # PDF 다운로드 버튼 (헬퍼 함수 사용)
-            render_pdf_download_button(message["content"], key_prefix=f"pdf_btn_{id(message)}")
-
-            # 도구 실행 결과 (헬퍼 함수 사용)
-            if "tool_results" in message:
-                render_tool_results(message.get("tool_results", {}))
-
-    # --- 3단 레이아웃 정의 전 초기화 처리 ---
-    # 글로벌 상태와 세션 상태 동기화 (UI 없이 백그라운드에서 실행)
-    state_manager = get_state_manager()
-    state = state_manager.load_state()
-
-    # 글로벌 상태에서 초기화 상태 확인
-    if state.get('system_initialized', False):
-        st.session_state.system_initialized = True
-
-    is_system_initialized = st.session_state.get('system_initialized', False)
-
-    # 시스템이 초기화되지 않았고, orchestrator가 없으면 자동 초기화
-    auto_init_failed = False
-    auto_init_error = None
-    if not is_system_initialized and 'orchestrator' not in st.session_state:
-        try:
-            if initialize_system():
-                is_system_initialized = True
-                st.rerun()
-            else:
-                auto_init_failed = True
-        except Exception as e:
-            logger.error(f"시스템 자동 초기화 오류: {e}")
-            auto_init_error = str(e)
-
+    
     # --- 3단 레이아웃 정의 (비율 조정) ---
     left_col, center_col, right_col = st.columns([0.8, 2.4, 1])
 
     # --- 왼쪽 컬럼: 제어판 ---
     with left_col:
+        # 글로벌 상태와 세션 상태 동기화
+        state_manager = get_state_manager()
+        state = state_manager.load_state()
+
+        # 글로벌 상태에서 초기화 상태 확인
+        if state.get('system_initialized', False):
+            st.session_state.system_initialized = True
+
+        is_system_initialized = st.session_state.get('system_initialized', False)
+
+        # 시스템이 초기화되지 않았고, orchestrator가 없으면 자동 초기화
+        if not is_system_initialized and 'orchestrator' not in st.session_state:
+            with st.spinner("시스템 자동 초기화 중..."):
+                try:
+                    if initialize_system():
+                        st.toast("✅ 시스템 초기화 완료!", icon="🎉")
+                        is_system_initialized = True
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ 시스템 자동 초기화 실패. 수동으로 초기화해주세요.")
+                except Exception as e:
+                    logger.error(f"시스템 자동 초기화 오류: {e}")
+                    st.warning("⚠️ 시스템 자동 초기화 중 오류 발생")
+
         with st.container(border=True):
-            # 자동 초기화 실패 시 경고 표시
-            if auto_init_failed:
-                st.warning("⚠️ 시스템 자동 초기화 실패. 수동으로 초기화해주세요.")
-            elif auto_init_error:
-                st.warning("⚠️ 시스템 자동 초기화 중 오류 발생")
             st.subheader("🎛️ 시스템 제어")
             if st.button("🔄 시스템 초기화", type="primary", use_container_width=True):
                 if initialize_system():
@@ -1464,20 +922,347 @@ def main():
 
     # --- 중앙 컬럼: 채팅 ---
     with center_col:
-        with st.container(border=True):
-            # 스타일 한 번만 렌더링
-            render_message_styles()
-
-            # 이전 메시지들 표시
+        # 채팅 메시지를 담을 컨테이너 (헤더 제거, 높이 최적화)
+        chat_container = st.container(height=650)
+        with chat_container:
             for i, message in enumerate(st.session_state.messages):
-                # thinking 메시지는 기록에서 제외 (스트리밍 중에만 표시)
-                if message.get("is_thinking", False):
-                    continue
-
+                # 카카오톡 스타일 메시지 표시
                 if message["role"] == "user":
-                    render_user_message(message)
+                    # 사용자 메시지 - 오른쪽 정렬 노란색 말풍선
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+                        <div style="background: #fee500; color: #191919; padding: 12px 16px; 
+                                    border-radius: 18px 4px 18px 18px; max-width: 70%; 
+                                    box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-size: 14px; 
+                                    line-height: 1.4; word-break: break-word;">
+                            {message["content"]}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 타임스탬프 (오른쪽 정렬)
+                    if message.get("timestamp"):
+                        st.markdown(f"""
+                        <div style="text-align: right; font-size: 11px; color: #666666; margin-top: -4px; margin-bottom: 12px;">
+                            {message["timestamp"]}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
                 else:
-                    render_assistant_message(message)
+                    # AI 메시지 - 왼쪽 정렬 흰색 말풍선
+                    is_thinking = message.get("is_thinking", False)
+
+                    # thinking 메시지는 스트리밍 중에만 표시되므로 기록에서 제외
+                    if is_thinking:
+                        continue
+
+                    bubble_class = "thinking-bubble" if is_thinking else ""
+
+                    # 생각 중 메시지는 특별한 스타일
+                    if is_thinking:
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; 
+                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                        display: flex; align-items: center; justify-content: center; 
+                                        margin-right: 8px; font-size: 18px; flex-shrink: 0;
+                                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                                        animation: thinking-pulse 2s ease-in-out infinite;">
+                                🤖
+                            </div>
+                            <div class="{bubble_class}" style="background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%); 
+                                        color: #2c5aa0; padding: 16px 20px; 
+                                        border-radius: 4px 18px 18px 18px; max-width: 70%; 
+                                        box-shadow: 0 4px 12px rgba(44, 90, 160, 0.2); 
+                                        border: 2px solid #667eea;
+                                        font-size: 15px; line-height: 1.5; word-break: break-word;
+                                        animation: thinking-glow 2s ease-in-out infinite;
+                                        position: relative; font-weight: 500;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 16px;">🧠</span>
+                                    <span>AI가 답변을 생성하고 있습니다</span>
+                                    <span style="animation: thinking-dots 1.5s infinite; font-size: 18px; color: #667eea;">⋯</span>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # 일반 AI 메시지 - HTML과 마크다운을 분리
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; 
+                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                        display: flex; align-items: center; justify-content: center; 
+                                        margin-right: 8px; font-size: 18px; flex-shrink: 0;
+                                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                                🤖
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # AI 메시지 내용을 깔끔한 마크다운으로만 표시
+                        with st.container():
+                            # 가독성 향상을 위한 CSS
+                            st.markdown("""
+                            <style>
+                            .ai-message-container {
+                                margin-left: 48px;
+                                position: relative;
+                                max-width: 80%;
+                                margin-top: -8px;
+                            }
+                            .ai-message-content {
+                                background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+                                color: #1f2937;
+                                padding: 24px 28px;
+                                border-radius: 8px 20px 20px 8px;
+                                box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+                                border: 1px solid #e2e8f0;
+                                font-size: 15px;
+                                line-height: 1.7;
+                                position: relative;
+                            }
+                            .ai-message-content::before {
+                                content: '';
+                                position: absolute;
+                                left: -1px;
+                                top: 20%;
+                                height: 60%;
+                                width: 4px;
+                                background: linear-gradient(135deg, #667eea, #764ba2);
+                                border-radius: 0 4px 4px 0;
+                            }
+                            .ai-message-content h2 {
+                                font-size: 16px !important;
+                                margin: 0 0 12px 0 !important;
+                                color: #1e40af !important;
+                                border-bottom: 1px solid #e0e7ff;
+                                padding-bottom: 6px;
+                                font-weight: 600 !important;
+                                line-height: 1.3 !important;
+                            }
+                            .ai-message-content h3 {
+                                font-size: 14px !important;
+                                margin: 16px 0 8px 0 !important;
+                                color: #374151 !important;
+                                font-weight: 600 !important;
+                                background: linear-gradient(90deg, #f8fafc, transparent);
+                                padding: 4px 8px;
+                                border-left: 2px solid #64748b;
+                                border-radius: 0 4px 4px 0;
+                                line-height: 1.3 !important;
+                            }
+                            .ai-message-content p {
+                                margin: 12px 0 !important;
+                                font-size: 15px !important;
+                                line-height: 1.7 !important;
+                                text-align: justify;
+                            }
+                            .ai-message-content ul {
+                                margin: 16px 0 !important;
+                                padding-left: 20px !important;
+                            }
+                            .ai-message-content li {
+                                font-size: 15px !important;
+                                line-height: 1.7 !important;
+                                margin: 8px 0 !important;
+                                padding-left: 8px;
+                            }
+                            .ai-message-content table {
+                                width: 100% !important;
+                                border-collapse: collapse !important;
+                                margin: 20px 0 !important;
+                                font-size: 14px !important;
+                                border-radius: 8px;
+                                overflow: hidden;
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                            }
+                            .ai-message-content th, .ai-message-content td {
+                                padding: 14px 18px !important;
+                                border: 1px solid #e2e8f0 !important;
+                                text-align: left !important;
+                                font-size: 14px !important;
+                            }
+                            .ai-message-content th {
+                                background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+                                font-weight: 650 !important;
+                                color: #475569 !important;
+                            }
+                            .ai-message-content td {
+                                background: #fefefe !important;
+                            }
+                            .ai-message-content strong {
+                                font-weight: 650 !important;
+                                color: #1e293b !important;
+                            }
+                            .ai-message-content hr {
+                                margin: 24px 0 !important;
+                                border: none !important;
+                                height: 2px !important;
+                                background: linear-gradient(90deg, #e2e8f0, transparent) !important;
+                            }
+                            .pdf-download-btn {
+                                position: absolute;
+                                bottom: 8px;
+                                right: 12px;
+                                z-index: 10;
+                            }
+                            .pdf-download-btn a {
+                                background: rgba(102, 126, 234, 0.1);
+                                color: #667eea;
+                                padding: 6px 10px;
+                                border-radius: 6px;
+                                text-decoration: none;
+                                font-size: 12px;
+                                font-weight: 500;
+                                border: 1px solid rgba(102, 126, 234, 0.2);
+                                transition: all 0.2s;
+                                display: inline-block;
+                                cursor: pointer;
+                                pointer-events: auto;
+                            }
+                            .pdf-download-btn a:hover {
+                                background: rgba(102, 126, 234, 0.2);
+                                transform: translateY(-1px);
+                                box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+                            
+                            # 메시지 컨테이너와 PDF 버튼을 함께 배치
+                            if message["role"] == "assistant" and not is_thinking:
+                                from datetime import datetime
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                
+                                # PDF 다운로드 버튼 파라미터 생성
+                                download_button_args = None
+                                try:
+                                    from utils.pdf_generator import (
+                                        MarkdownToPDFConverter, 
+                                        is_pdf_available
+                                    )
+                                    
+                                    if is_pdf_available():
+                                        pdf_converter = MarkdownToPDFConverter()
+                                        # 영문 파일명으로 변경 (한글 파일명 문제 해결)
+                                        filename = f"agentic_rag_report_{timestamp}.pdf"
+                                        pdf_bytes = pdf_converter.convert_markdown_to_pdf(message["content"], filename)
+                                        download_button_args = {
+                                            "label": "📄 PDF",
+                                            "data": pdf_bytes,
+                                            "file_name": filename,
+                                            "mime": "application/pdf"
+                                        }
+                                    else:
+                                        # 텍스트 파일도 영문 파일명으로 변경
+                                        filename = f"agentic_rag_report_{timestamp}.txt"
+                                        text_bytes = message["content"].encode('utf-8')
+                                        download_button_args = {
+                                            "label": "📝 저장",
+                                            "data": text_bytes,
+                                            "file_name": filename,
+                                            "mime": "text/plain"
+                                        }
+                                except Exception as e:
+                                    logger.error(f"다운로드 버튼 생성 오류: {str(e)}")
+                                    # 오류 발생시 기본 텍스트 저장 버튼 제공
+                                    filename = f"agentic_rag_report_{timestamp}.txt"
+                                    text_bytes = message["content"].encode('utf-8')
+                                    download_button_args = {
+                                        "label": "📝 저장",
+                                        "data": text_bytes,
+                                        "file_name": filename,
+                                        "mime": "text/plain"
+                                    }
+                                
+                                # 메시지 마크다운을 HTML로 변환해 코드블록 누락 등으로 인한 HTML 누출 방지
+                                try:
+                                    import markdown as _md
+                                    # 마크다운 확장 기능 추가로 구조화된 형식 지원
+                                    message_html = _md.markdown(
+                                        message["content"], 
+                                        extensions=[
+                                            'tables', 
+                                            'fenced_code', 
+                                            'toc',
+                                            'attr_list',
+                                            'def_list'
+                                        ]
+                                    )
+                                except Exception:
+                                    # 변환 실패 시 원문 그대로 출력하되 안전을 위해 escape 처리 없이 출력 (기존 동작 유지)
+                                    message_html = message["content"]
+
+                                # 컨테이너 내부 오른쪽 아래에 표시될 다운로드 버튼(앵커) HTML 구성
+                                download_anchor_html = ""
+                                if download_button_args:
+                                    import base64 as _b64
+                                    data_bytes = download_button_args.get("data", b"")
+                                    file_name = download_button_args.get("file_name", f"agentic_rag_report_{timestamp}.txt")
+                                    mime_type = download_button_args.get("mime", "application/octet-stream")
+                                    b64_data = _b64.b64encode(data_bytes).decode()
+                                    download_anchor_html = f'''
+                                    <div class="pdf-download-btn">
+                                        <a href="data:{mime_type};base64,{b64_data}" download="{file_name}" title="파일 저장">
+                                            {download_button_args.get("label", "⬇️ 다운로드")}
+                                        </a>
+                                    </div>
+                                    '''
+
+                                # 메시지 내용과 다운로드 버튼을 같은 컨테이너에 렌더링
+                                # 컨테이너를 먼저 렌더링하고, 그 다음 HTML 앵커를 별도 출력하여
+                                # 일부 환경에서 앵커가 코드처럼 보이는 문제를 방지
+                                st.markdown(f'''
+                                <div class="ai-message-container">
+                                    <div class="ai-message-content">
+                                        {message_html}
+                                    </div>
+                                </div>
+                                ''', unsafe_allow_html=True)
+                                if download_anchor_html:
+                                    st.markdown(download_anchor_html, unsafe_allow_html=True)
+                            else:
+                                # thinking 상태이거나 사용자 메시지인 경우 일반 표시
+                                st.markdown(f'<div class="ai-message-content">{message["content"]}</div>', unsafe_allow_html=True)
+                    
+                    # 타임스탬프와 처리시간 (왼쪽 정렬, 프로필 이미지 만큼 들여쓰기)
+                    if not is_thinking:
+                        timestamp_parts = []
+                        if message.get("timestamp"):
+                            timestamp_parts.append(message["timestamp"])
+                        if message.get("processing_time"):
+                            timestamp_parts.append(f"⚡ {message['processing_time']}")
+                        
+                        if timestamp_parts:
+                            st.markdown(f"""
+                            <div style="margin-left: 48px; font-size: 11px; color: #666666; margin-top: -4px; margin-bottom: 12px;">
+                                {" | ".join(timestamp_parts)}
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # 도구 실행 결과 (생각 중이 아닌 경우에만)
+                    if not is_thinking and "tool_results" in message:
+                        tool_results = message.get("tool_results", {})
+                        if tool_results:
+                            with st.expander("🔍 도구 실행 결과", expanded=False):
+                                for tool_name, result in tool_results.items():
+                                    st.subheader(f"🛠️ {tool_name}")
+                                    if isinstance(result, dict):
+                                        # 중요 정보만 하이라이트
+                                        if 'success' in result:
+                                            status = "✅ 성공" if result.get('success') else "❌ 실패"
+                                            st.markdown(f"**상태:** {status}")
+                                        if 'message' in result:
+                                            st.markdown(f"**결과:** {result['message']}")
+                                        if 'temperature_c' in result:
+                                            st.markdown(f"**🌡️ 기온:** {result['temperature_c']}°C")
+                                        if 'humidity' in result:
+                                            st.markdown(f"**💧 습도:** {result['humidity']}%")
+                                        # 전체 JSON은 접을 수 있게
+                                        with st.expander("전체 데이터", expanded=False):
+                                            st.json(result)
+                                    else:
+                                        st.write(str(result))
 
             # thinking 메시지가 있을 때 스트리밍 응답 처리 (채팅 컨테이너 안에서!)
             if (st.session_state.messages and
@@ -1508,17 +1293,149 @@ def main():
                     tool_calls = None
                     tool_results = {}
 
+                    # thinking 메시지는 유지 (사용자가 볼 수 있도록)
+                    # 나중에 실제 응답으로 교체됨
+
+                    # 스트리밍을 위한 커스텀 CSS (Streamlit chat_message 스타일 오버라이드)
+                    st.markdown("""
+                    <style>
+                    /* 로딩 스피너 애니메이션 */
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    /* 로딩 점 애니메이션 */
+                    @keyframes dots {
+                        0%, 20% { content: '.'; }
+                        40% { content: '..'; }
+                        60%, 100% { content: '...'; }
+                    }
+                    .loading-dots::after {
+                        content: '...';
+                        animation: dots 1.5s infinite;
+                    }
+                    /* 스트리밍 메시지 스타일 */
+                    .stChatMessage {
+                        background: transparent !important;
+                        padding: 0 !important;
+                    }
+                    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                    }
+                    /* 메시지 내용 스타일 */
+                    .stChatMessage .stMarkdown {
+                        background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+                        padding: 24px 28px;
+                        border-radius: 8px 20px 20px 8px;
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+                        border-left: 4px solid #667eea;
+                        border: 1px solid #e2e8f0;
+                        border-left: 4px solid #667eea;
+                    }
+                    .stChatMessage .stMarkdown p {
+                        margin: 12px 0 !important;
+                        font-size: 15px !important;
+                        line-height: 1.7 !important;
+                        color: #1f2937;
+                    }
+                    .stChatMessage .stMarkdown h2 {
+                        font-size: 20px !important;
+                        margin: 0 0 20px 0 !important;
+                        color: #1e40af !important;
+                        border-bottom: 3px solid #e0e7ff;
+                        padding-bottom: 10px;
+                    }
+                    .stChatMessage .stMarkdown h3 {
+                        font-size: 17px !important;
+                        margin: 24px 0 14px 0 !important;
+                        color: #374151 !important;
+                        background: linear-gradient(90deg, #f1f5f9, transparent);
+                        padding: 8px 12px;
+                        border-left: 4px solid #64748b;
+                    }
+                    .stChatMessage .stMarkdown ul {
+                        margin: 16px 0 !important;
+                        padding-left: 20px !important;
+                    }
+                    .stChatMessage .stMarkdown li {
+                        font-size: 15px !important;
+                        line-height: 1.7 !important;
+                        margin: 8px 0 !important;
+                    }
+                    .stChatMessage .stMarkdown table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    }
+                    .stChatMessage .stMarkdown th {
+                        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                        color: white;
+                        padding: 12px;
+                        text-align: left;
+                        font-weight: 600;
+                    }
+                    .stChatMessage .stMarkdown td {
+                        padding: 12px;
+                        border: 1px solid #e2e8f0;
+                    }
+                    .stChatMessage .stMarkdown tr:nth-child(even) {
+                        background: #f8fafc;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+
                     # Streamlit의 chat_message를 사용하여 실시간 스트리밍
                     with st.chat_message("assistant", avatar="🤖"):
+                        # 로딩 메시지 표시
+                        loading_placeholder = st.empty()
+                        loading_placeholder.markdown("""
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 16px 20px;
+                                    background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
+                                    border-radius: 8px 20px 20px 8px; border-left: 4px solid #667eea;
+                                    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);">
+                            <div style="width: 24px; height: 24px;">
+                                <svg style="animation: spin 1s linear infinite;" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke="#667eea" stroke-width="3" fill="none" stroke-dasharray="60" stroke-dashoffset="0" stroke-linecap="round">
+                                        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+                                    </circle>
+                                </svg>
+                            </div>
+                            <span style="color: #2c5aa0; font-weight: 500; font-size: 15px;">
+                                🔍 질문 분석 중<span class="loading-dots"></span>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
                         # 스트리밍 응답 생성 시작
                         start_time = time.time()
+                        stream_generator = st.session_state.orchestrator.process_query_sync(user_prompt, stream=True)
 
-                        # 깔끔한 상태 표시
-                        with st.status("🔍 질문 분석 및 답변 생성 중...", expanded=False) as status:
-                            st.write("💭 질문 분석 중...")
-                            stream_generator = st.session_state.orchestrator.process_query_sync(user_prompt, stream=True)
-                            st.write("✨ 답변 생성 중...")
-                            status.update(label="✅ 답변 생성 완료!", state="complete", expanded=False)
+                        # 도구 실행 완료 메시지로 업데이트
+                        loading_placeholder.markdown("""
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 16px 20px;
+                                    background: linear-gradient(135deg, #f0fff4 0%, #dcfce7 100%);
+                                    border-radius: 8px 20px 20px 8px; border-left: 4px solid #22c55e;
+                                    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2);">
+                            <div style="width: 24px; height: 24px;">
+                                <svg style="animation: spin 1s linear infinite;" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke="#22c55e" stroke-width="3" fill="none" stroke-dasharray="60" stroke-dashoffset="0" stroke-linecap="round">
+                                        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+                                    </circle>
+                                </svg>
+                            </div>
+                            <span style="color: #166534; font-weight: 500; font-size: 15px;">
+                                ✨ 답변 생성 중<span class="loading-dots"></span>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # 짧은 대기 (상태 업데이트가 보이도록)
+                        import time as _time
+                        _time.sleep(0.2)
+
+                        # 로딩 메시지 제거 후 스트리밍 시작
+                        loading_placeholder.empty()
 
                         # 스트리밍 제너레이터
                         def stream_response():
@@ -1537,32 +1454,18 @@ def main():
                             full_response = apply_consistent_formatting(full_response)
 
                         # 실시간 스트리밍 표시
-                        message_placeholder = st.empty()
-                        streamed_content = message_placeholder.write_stream(stream_response())
+                        st.write_stream(stream_response())
 
-                        # 스트리밍 완료 후 재렌더링하지 않음 - write_stream이 이미 올바르게 렌더링함
-                        # message_placeholder는 그대로 유지
+                    processing_time = time.time() - start_time
 
-                        # 스트리밍 완료 후 추가 정보 표시
-                        processing_time = time.time() - start_time
-
-                        # 타임스탬프와 처리시간 표시
-                        st.caption(f"🕐 {datetime.now().strftime('%H:%M')} | ⚡ {processing_time:.2f}초")
-
-                        # PDF 다운로드 버튼 (헬퍼 함수 사용)
-                        render_pdf_download_button(full_response, key_prefix="pdf_stream")
-
-                        # 도구 실행 결과 표시 (헬퍼 함수 사용)
-                        render_tool_results(tool_results)
-
-                    # thinking 메시지를 실제 응답으로 교체 (rerun 없이)
+                    # thinking 메시지를 실제 응답으로 교체 (이미 후처리된 응답 사용)
                     st.session_state.messages[-1] = {
                         "role": "assistant",
-                        "content": full_response,
+                        "content": full_response,  # 이미 후처리된 응답 사용
                         "tool_results": tool_results,
                         "timestamp": datetime.now().strftime("%H:%M"),
                         "processing_time": f"{processing_time:.2f}초",
-                        "is_thinking": False
+                        "is_thinking": False  # thinking 플래그 제거
                     }
 
                     # 디버그 정보 업데이트
@@ -1579,26 +1482,24 @@ def main():
 
                     st.toast("✅ 응답 완료!", icon="🎉")
 
-                    # rerun 제거 - 스트리밍된 메시지를 그대로 유지
+                    # 페이지를 다시 렌더링하여 메시지를 깔끔하게 표시
+                    st.rerun()
 
                 except Exception as e:
-                    # 오류 발생 시 thinking 메시지 제거하고 에러 메시지로 교체
-                    logger.error(f"스트리밍 오류: {str(e)}")
+                    # 오류 발생 시 오류 메시지로 교체
                     error_message = f"❌ 오류가 발생했습니다: {str(e)}"
                     cleaned_error = clean_ai_response(error_message)
                     st.session_state.messages[-1] = {
                         "role": "assistant",
                         "content": cleaned_error,
-                        "timestamp": datetime.now().strftime("%H:%M"),
-                        "is_thinking": False
+                        "timestamp": datetime.now().strftime("%H:%M")
                     }
 
                     if 'processing_started' in st.session_state:
                         del st.session_state.processing_started
 
-                    st.error(cleaned_error)
                     st.toast("❌ 오류 발생", icon="⚠️")
-                    # rerun 제거 - 오류 메시지를 바로 표시
+                    st.rerun()
 
         # --- 자동 스크롤 (개선된 버전) ---
         # MutationObserver를 사용하여 채팅 내용 변경을 감지하고 자동으로 스크롤합니다.
@@ -1743,6 +1644,7 @@ def main():
                             # 날짜 정보 추출 (연월일 시분초까지 전체 표시)
                             last_update = selected_data.get('last_update', '')
                             try:
+                                from datetime import datetime
                                 if 'T' in last_update:
                                     update_dt = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
                                 else:
@@ -1869,6 +1771,7 @@ def main():
                                     if timestamp:
                                         # 시간만 표시 (HH:MM 형식)
                                         try:
+                                            from datetime import datetime
                                             dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                                             time_str = dt.strftime('%H:%M')
                                         except:
@@ -1967,6 +1870,7 @@ def main():
                                     else:
                                         # 문자열 형태의 timestamp 처리
                                         try:
+                                            from datetime import datetime
                                             if isinstance(timestamp, str):
                                                 dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                                                 time_str = dt.strftime('%H:%M:%S')
@@ -2161,6 +2065,7 @@ def main():
                             upload_date = file_info.get('uploadDate', 'N/A')
                             if isinstance(upload_date, str):
                                 try:
+                                    from datetime import datetime
                                     upload_date = datetime.fromisoformat(upload_date.replace('Z', '+00:00'))
                                 except:
                                     pass

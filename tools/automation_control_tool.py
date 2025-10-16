@@ -8,6 +8,10 @@ from utils.logger import setup_logger
 from utils.helpers import get_current_timestamp, create_error_response, create_success_response, get_lm_studio_client
 import streamlit as st
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 logger = setup_logger(__name__)
 
 def automation_control_tool(**kwargs) -> Dict[str, Any]:
@@ -114,10 +118,10 @@ def _start_automation(automation_agent, automation_logger) -> Dict[str, Any]:
             
             return {
                 'success': True,
-                'message': '🤖 EXAONE AI 자동화 에이전트가 시작되었습니다! 30초마다 시스템을 분석하고 자동으로 조치합니다.',
+                'message': '🤖 AI 자동화 에이전트가 시작되었습니다! 30초마다 시스템을 분석하고 자동으로 조치합니다.',
                 'status': automation_agent.get_status(),
                 'details': {
-                    'agent_type': 'EXAONE 4.0.1.2B',
+                    'agent_type': os.getenv('LM_STUDIO_MODEL_NAME'),
                     'decision_interval': '30초',
                     'monitoring': '실시간'
                 }
@@ -338,11 +342,10 @@ def _get_logs(automation_logger, limit: int, level: str, reservoir_id: Optional[
 def _debug_arduino_connection(automation_logger) -> Dict[str, Any]:
     """Arduino 연결 상태 및 디버깅 정보 제공"""
     try:
-        from utils.helpers import get_arduino_tool
         import platform
         import os
         import subprocess
-        
+
         debug_info = {
             "success": True,
             "timestamp": get_current_timestamp(),
@@ -351,7 +354,7 @@ def _debug_arduino_connection(automation_logger) -> Dict[str, Any]:
             "connection_diagnosis": {},
             "recommendations": []
         }
-        
+
         # === 시스템 정보 수집 ===
         debug_info["system_info"] = {
             "platform": platform.system(),
@@ -360,10 +363,15 @@ def _debug_arduino_connection(automation_logger) -> Dict[str, Any]:
             "python_version": platform.python_version(),
             "working_directory": os.getcwd()
         }
-        
-        # === Arduino 도구 상태 확인 ===
+
+        # === Arduino 도구 상태 확인 (세션 상태에서) ===
         try:
-            arduino_tool = get_arduino_tool()
+            # Streamlit 세션 상태에서 Arduino 도구 가져오기
+            arduino_tool = None
+            if hasattr(st.session_state, 'orchestrator') and st.session_state.orchestrator:
+                orchestrator = st.session_state.orchestrator
+                if hasattr(orchestrator, 'tool_manager') and 'arduino_water_sensor' in orchestrator.tool_manager.tools:
+                    arduino_tool = orchestrator.tool_manager.tools['arduino_water_sensor']
             
             if arduino_tool is not None:
                 debug_info["arduino_status"] = {
@@ -544,13 +552,15 @@ def _debug_arduino_connection(automation_logger) -> Dict[str, Any]:
 def _test_arduino_connection(automation_logger) -> Dict[str, Any]:
     """Arduino 연결 테스트 및 자동 연결 시도"""
     try:
-        from utils.helpers import get_arduino_tool
-        
-        # Arduino 도구 생성
-        arduino_tool = get_arduino_tool()
-        
+        # Streamlit 세션 상태에서 Arduino 도구 가져오기
+        arduino_tool = None
+        if hasattr(st.session_state, 'orchestrator') and st.session_state.orchestrator:
+            orchestrator = st.session_state.orchestrator
+            if hasattr(orchestrator, 'tool_manager') and 'arduino_water_sensor' in orchestrator.tool_manager.tools:
+                arduino_tool = orchestrator.tool_manager.tools['arduino_water_sensor']
+
         if arduino_tool is None:
-            return create_error_response("Arduino 도구를 생성할 수 없습니다", "Arduino 도구 초기화 실패")
+            return create_error_response("Arduino 도구를 찾을 수 없습니다. 먼저 시스템 초기화를 실행하세요.", "Arduino 도구 없음")
         
         test_result = {
             "success": False,

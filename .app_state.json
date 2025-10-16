@@ -2,55 +2,349 @@
   "automation_status": false,
   "autonomous_monitoring": false,
   "system_initialized": true,
-  "last_update": "2025-09-29T00:30:30.967100",
+  "last_update": "2025-10-16T00:56:32.380888",
   "orchestrator_active": true,
-  "arduino_connected": false,
+  "arduino_connected": true,
   "simulation_mode": true,
+  "model_loaded": false,
+  "arduino_port": "/dev/ttyACM0",
+  "last_successful_data": {
+    "water_data": {
+      "success": true,
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "current_water_level": 0,
+      "average_water_level": 0.0
+    },
+    "pump_data": {
+      "success": true,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      },
+      "raw_response": "PUMP1_STATUS:OFF,PUMP2_STATUS:OFF"
+    },
+    "timestamp": "2025-10-15T01:53:47.016877"
+  },
+  "dashboard_data": [
+    {
+      "timestamp": "2025-10-15T01:15:54.255589",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:15:54.255589",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:15:54.255589",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:16.289162",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "ON",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:15:54.255589",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:15:54.255589",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:26:20.269767",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:39.662750",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "ON"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    }
+  ],
   "reservoir_data": {
     "gagok": {
-      "water_level": 66.85,
-      "pump_status": "ON",
+      "water_level": 61.23,
+      "pump_status": "OFF",
       "alert_level": 90.0,
-      "active_pumps": 2,
-      "total_pumps": 2,
+      "active_pumps": 0,
+      "total_pumps": 1,
       "pump_details": {
-        "pump_a": true,
-        "pump_b": true
+        "pump_a": false
       },
-      "measured_at": "2025-09-20T10:56:22.736402",
+      "measured_at": "2025-10-15T10:11:07.617964",
       "reservoir_name": "가곡 배수지"
     },
     "haeryong": {
-      "water_level": 2.09,
-      "pump_status": "OFF",
+      "water_level": 2.56,
+      "pump_status": "ON",
       "alert_level": 85.0,
-      "active_pumps": 0,
-      "total_pumps": 2,
+      "active_pumps": 1,
+      "total_pumps": 1,
       "pump_details": {
-        "pump_a": false,
-        "pump_b": false
+        "pump_a": true
       },
-      "measured_at": "2025-09-20T10:56:22.736402",
+      "measured_at": "2025-10-15T10:11:07.617964",
       "reservoir_name": "해룡 배수지"
-    },
-    "sangsa": {
-      "water_level": 87.57,
-      "pump_status": "OFF",
-      "alert_level": 95.0,
-      "active_pumps": 0,
-      "total_pumps": 3,
-      "pump_details": {
-        "pump_a": false,
-        "pump_b": false,
-        "pump_c": false
-      },
-      "measured_at": "2025-09-20T10:56:22.736402",
-      "reservoir_name": "상사 배수지"
     }
   },
   "pump_status": {
     "haeryong": "ON",
-    "sangsa": "OFF",
-    "gagok": "AUTO"
+    "gagok": "OFF"
   }
 }

@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from typing import Dict
 from utils.logger import setup_logger
+from utils.helpers import extract_float_numbers, parse_time_info_from_text
 import os
 
 logger = setup_logger(__name__)
@@ -17,7 +18,7 @@ class WaterLevelPredictionTool:
         self.description = "LSTM 모델을 사용하여 수위를 예측합니다. 과거 수위 데이터를 입력받아 미래 수위를 예측합니다."
         self.model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'lstm_model', 'lstm_water_level_model.h5')
         self.model = None
-        self._load_model()
+        # Lazy loading: 최초 사용 시 로드
     
     def _load_model(self):
         """LSTM 모델 로드"""
@@ -29,6 +30,11 @@ class WaterLevelPredictionTool:
                 logger.error(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         except Exception as e:
             logger.error(f"모델 로드 실패: {str(e)}")
+
+    def _ensure_model_loaded(self):
+        """모델이 로드되어 있지 않으면 로드한다."""
+        if self.model is None:
+            self._load_model()
     
     def _convert_and_validate_data(self, data):
         """데이터를 수위 리스트로 변환 및 검증"""
@@ -75,8 +81,6 @@ class WaterLevelPredictionTool:
             # 문자열인 경우 (JSON 형태 가능)
             elif isinstance(data, str):
                 import json
-                import re
-                
                 try:
                     # JSON 파싱 시도
                     parsed = json.loads(data)
@@ -84,27 +88,10 @@ class WaterLevelPredictionTool:
                         return self._convert_and_validate_data(parsed)
                 except json.JSONDecodeError:
                     pass
-                
-                # 대괄호로 감싸진 문자열 처리
-                if data.strip().startswith('[') and data.strip().endswith(']'):
-                    try:
-                        # 안전하게 리스트로 변환
-                        list_str = data.strip()[1:-1]  # 대괄호 제거
-                        numbers = []
-                        for item in list_str.split(','):
-                            item = item.strip()
-                            if item:
-                                numbers.append(float(item))
-                        return numbers if numbers else None
-                    except ValueError:
-                        pass
-                
-                # 일반 문자열에서 숫자 추출
-                numbers = re.findall(r'-?\d+\.?\d*', data)
-                if numbers:
-                    return [float(num) for num in numbers]
-                
-                return None
+
+                # 문자열에서 숫자 추출 (필터 없이 전부)
+                numbers = extract_float_numbers(data)
+                return numbers if numbers else None
             
             # 단일 숫자인 경우
             elif isinstance(data, (int, float)):
@@ -170,10 +157,9 @@ class WaterLevelPredictionTool:
         if not text:
             return None
         
-        import re
-        
         # 대괄호 안의 숫자 리스트 찾기
         bracket_pattern = r'\[([^\]]+)\]'
+        import re
         matches = re.findall(bracket_pattern, text)
         
         for match in matches:
@@ -192,17 +178,11 @@ class WaterLevelPredictionTool:
                 continue
         
         # 일반 숫자 패턴으로 추출
-        number_pattern = r'-?\d+\.?\d*'
-        all_numbers = re.findall(number_pattern, text)
-        
-        if len(all_numbers) > 10:  # 충분한 숫자가 있는 경우
-            try:
-                numbers = [float(num) for num in all_numbers if 50 <= float(num) <= 150]  # 수위 범위 필터
-                if len(numbers) > 3:
-                    logger.info(f"텍스트에서 {len(numbers)}개 수위 데이터 추출 성공")
-                    return numbers
-            except ValueError:
-                pass
+        # 범위 필터 포함한 숫자 추출 (수위 합리 범위 50~150 가정)
+        numbers = extract_float_numbers(text, min_count=4, min_value=50.0, max_value=150.0)
+        if numbers:
+            logger.info(f"텍스트에서 {len(numbers)}개 수위 데이터 추출 성공")
+            return numbers
         
         logger.warning("텍스트에서 유효한 수위 데이터를 찾을 수 없습니다")
         return None
@@ -225,7 +205,7 @@ class WaterLevelPredictionTool:
 
         # 자연어 질의 처리
         if query and not time_horizon:
-            time_horizon = self._parse_time_from_query(query)
+            time_horizon = parse_time_info_from_text(query)
         
         # 분석 유형별 특별 처리
         if analysis_type:
@@ -287,6 +267,8 @@ class WaterLevelPredictionTool:
         logger.info(f"수위 예측 실행: {len(water_levels) if water_levels else 0}개 데이터, {prediction_steps}개 예측")
         
         try:
+            # Lazy load
+            self._ensure_model_loaded()
             if self.model is None:
                 return {"error": "LSTM 모델이 로드되지 않았습니다."}
             
@@ -433,28 +415,8 @@ class WaterLevelPredictionTool:
             return {"error": f"모델 정보 조회 중 오류가 발생했습니다: {str(e)}"}
     
     def _parse_time_from_query(self, query: str) -> dict:
-        """질의에서 시간 정보 파싱"""
-        if not query:
-            return None
-            
-        import re
-        query_lower = query.lower()
-        
-        # 시간 패턴 매칭
-        patterns = [
-            (r'(\d+)\s*시간\s*(뒤|후|이후)', lambda m: {'hours': int(m.group(1))}),
-            (r'(\d+)\s*분\s*(뒤|후|이후)', lambda m: {'minutes': int(m.group(1))}),
-            (r'(\d+)\s*일\s*(뒤|후|이후)', lambda m: {'days': int(m.group(1))}),
-            (r'내일', lambda m: {'tomorrow': True}),
-            (r'다음날', lambda m: {'tomorrow': True}),
-        ]
-        
-        for pattern, extractor in patterns:
-            match = re.search(pattern, query_lower)
-            if match:
-                return extractor(match)
-                
-        return None
+        """(호환용) 질의에서 시간 정보 파싱 - 공통 유틸 사용"""
+        return parse_time_info_from_text(query)
     
     def _enhance_prediction_with_analysis(self, result: dict, analysis_type: str, query: str = None) -> dict:
         """분석 유형에 따른 예측 결과 개선"""

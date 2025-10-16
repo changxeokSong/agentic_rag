@@ -46,7 +46,22 @@ class ListFilesTool:
                 })
             
             logger.info(f"파일 목록 조회 성공: {len(result)}개 파일")
-            return {"message": f"총 {len(result)}개의 파일이 업로드되어 있습니다.", "files": result}
+            
+            # 표 형식으로 정리된 파일 정보 생성
+            formatted_files = []
+            for file_data in result:
+                formatted_files.append({
+                    "파일명": file_data["filename"],
+                    "크기": f"{file_data['size_mb']} MB",
+                    "업로드 일시": file_data["upload_date"]
+                })
+            
+            return {
+                "message": f"총 {len(result)}개의 파일이 업로드되어 있습니다.", 
+                "files": result,
+                "formatted_files": formatted_files,
+                "file_count": len(result)
+            }
             
         except ImportError as e:
             logger.error(f"필요한 모듈이 설치되지 않았습니다: {str(e)}")

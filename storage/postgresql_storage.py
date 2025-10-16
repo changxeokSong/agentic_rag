@@ -1,34 +1,74 @@
 # storage/postgresql_storage.py
 
+from datetime import datetime
 import os
+import re
+import tempfile
+from typing import Dict, Any, List, Optional
 import psycopg2
-import psycopg2.extras # JSONB 처리를 위해 필요
+import psycopg2.extras
 from utils.logger import setup_logger
+from utils.exceptions import DatabaseError, EmbeddingError, FileProcessingError, ConnectionError
 from config import (
     PG_DB_HOST, PG_DB_NAME, PG_DB_USER, PG_DB_PASSWORD, PG_DB_PORT,
     EMBEDDING_MODEL_NAME, OPENAI_API_KEY_ENV_VAR, TOP_K_RESULTS,
     CHUNK_SIZE, CHUNK_OVERLAP
 )
-# 필요한 Langchain 컴포넌트 및 임베딩 모델 임포트
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings # OpenAIEmbeddings 임포트
+from langchain_openai import OpenAIEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader # 파일 내용 로딩용
-import tempfile
-from bson.objectid import ObjectId # ObjectId 처리가 더 이상 필요 없을 수 있으나, 마이그레이션 과정에서 필요할 수도 있으므로 남겨둡니다.
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 
 logger = setup_logger(__name__)
 
-class PostgreSQLStorage:
-    """PostgreSQL 데이터베이스와 상호작용하는 클래스 (pgvector 포함) - 싱글톤 적용"""
-    _instance = None # 싱글톤 인스턴스
-    _initialized = False # 초기화 상태 플래그
-    _connection = None # 데이터베이스 연결 객체
-    _cursor = None # 커서 객체
-    _pgvector_available = False
 
-    def __new__(cls, *args, **kwargs):
-        """인스턴스가 없을 때만 새로 생성하여 반환"""
+def clean_text_for_postgresql(text: str) -> str:
+    """PostgreSQL 저장을 위해 텍스트에서 NUL 문자와 기타 문제가 되는 문자를 제거
+
+    Args:
+        text: 정제할 텍스트
+
+    Returns:
+        str: 정제된 텍스트
+    """
+    if not isinstance(text, str):
+        return text
+
+    # NUL 문자 (0x00) 제거
+    text = text.replace('\x00', '')
+
+    # 기타 제어 문자 제거 (선택적)
+    text = re.sub(r'[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+
+    return text
+
+class PostgreSQLStorage:
+    """PostgreSQL 데이터베이스와 상호작용하는 클래스 (pgvector 포함)
+
+    싱글톤 패턴을 적용하여 전역적으로 하나의 데이터베이스 연결만 유지합니다.
+    pgvector 확장을 사용하여 벡터 검색 기능을 제공합니다.
+
+    Attributes:
+        _instance: 싱글톤 인스턴스
+        _initialized: 초기화 상태 플래그
+        _connection: 데이터베이스 연결 객체
+        _cursor: 커서 객체
+        _pgvector_available: pgvector 확장 사용 가능 여부
+        embedding_model: 임베딩 모델 인스턴스
+    """
+
+    _instance: Optional['PostgreSQLStorage'] = None
+    _initialized: bool = False
+    _connection: Optional[psycopg2.extensions.connection] = None
+    _cursor: Optional[psycopg2.extras.RealDictCursor] = None
+    _pgvector_available: bool = False
+
+    def __new__(cls, *args, **kwargs) -> 'PostgreSQLStorage':
+        """인스턴스가 없을 때만 새로 생성하여 반환 (싱글톤 패턴)
+
+        Returns:
+            PostgreSQLStorage: 싱글톤 인스턴스
+        """
         if not cls._instance:
             cls._instance = super(PostgreSQLStorage, cls).__new__(cls)
         return cls._instance
@@ -183,11 +223,24 @@ class PostgreSQLStorage:
             self._connection = None
             self._cursor = None
 
-    # 싱글톤 인스턴스를 얻는 스태틱 메소드
     @staticmethod
-    def get_instance():
+    def get_instance() -> 'PostgreSQLStorage':
+        """싱글톤 인스턴스를 얻는 스태틱 메소드
+
+        Returns:
+            PostgreSQLStorage: 싱글톤 인스턴스
+
+        Raises:
+            DatabaseError: 데이터베이스 초기화 실패 시
+        """
         if PostgreSQLStorage._instance is None or not PostgreSQLStorage._initialized:
-             PostgreSQLStorage()
+            try:
+                PostgreSQLStorage()
+            except Exception as e:
+                raise DatabaseError(
+                    "PostgreSQL 인스턴스 생성 실패",
+                    {"error": str(e)}
+                ) from e
         return PostgreSQLStorage._instance
 
     def close(self):
@@ -225,19 +278,41 @@ class PostgreSQLStorage:
         except Exception as e:
             logger.debug(f"임시 파일 정리 중 경고: {e}")
 
-    def execute_query(self, query, params=None, fetchone=False, fetchall=False, commit=False):
-        """SQL 쿼리 실행을 위한 헬퍼 메소드"""
+    def execute_query(
+        self,
+        query: str,
+        params: Optional[tuple] = None,
+        fetchone: bool = False,
+        fetchall: bool = False,
+        commit: bool = False
+    ) -> Any:
+        """SQL 쿼리 실행을 위한 헬퍼 메소드
+
+        Args:
+            query: 실행할 SQL 쿼리
+            params: 쿼리 파라미터 (선택 사항)
+            fetchone: 단일 행 반환 여부
+            fetchall: 모든 행 반환 여부
+            commit: 커밋 수행 여부
+
+        Returns:
+            Any: 쿼리 결과 (fetchone/fetchall) 또는 True (commit)
+
+        Raises:
+            ConnectionError: 데이터베이스 연결이 없는 경우
+            DatabaseError: 쿼리 실행 중 오류 발생 시
+        """
         if not self._initialized or not self._cursor:
-            logger.error("데이터베이스 연결이 초기화되지 않았습니다.")
-            # 연결이 안된 경우 적절한 오류 처리 또는 None 반환
-            if commit: # 쓰기 작업 시
-                 # 오류를 발생시키거나 False 반환
-                 raise ConnectionError("데이터베이스 연결이 초기화되지 않았습니다.")
-            else: # 읽기 작업 시
-                 return None # 또는 빈 리스트/딕셔너리
+            error_msg = "데이터베이스 연결이 초기화되지 않았습니다."
+            logger.error(error_msg)
+            if commit:
+                raise ConnectionError(error_msg)
+            else:
+                return None
 
         try:
             self._cursor.execute(query, params)
+
             if commit:
                 self._connection.commit()
                 return True
@@ -246,24 +321,39 @@ class PostgreSQLStorage:
             elif fetchall:
                 return self._cursor.fetchall()
             else:
-                return None # SELECT 문이 아니거나 결과를 원하지 않는 경우
-        except Exception as e:
-            self._connection.rollback() # 오류 발생 시 롤백
-            logger.error(f"SQL 쿼리 실행 오류: {e}\n쿼리: {query}\n파라미터: {params}")
-            raise # 오류를 상위 호출자로 전파
+                return None
 
-    def save_file(self, file_content: bytes, filename: str, metadata: dict = None):
-        """
-        파일을 files 테이블에 저장하고 내용을 처리하여 chunks 테이블에 저장합니다.
-        PostgreSQL용으로 재구현.
-        
+        except Exception as e:
+            if self._connection:
+                self._connection.rollback()
+            error_msg = f"SQL 쿼리 실행 오류: {str(e)}"
+            logger.error(f"{error_msg}\n쿼리: {query}\n파라미터: {params}")
+            raise DatabaseError(
+                error_msg,
+                {"query": query[:200], "params": str(params)[:200], "error": str(e)}
+            ) from e
+
+    def save_file(
+        self,
+        file_content: bytes,
+        filename: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
+        """파일을 files 테이블에 저장하고 내용을 처리하여 chunks 테이블에 저장
+
+        임베딩 생성이 완료된 후에만 파일을 저장합니다.
+
         Args:
-            file_content (bytes): 저장할 파일 내용 (바이트).
-            filename (str): 파일 이름.
-            metadata (dict, optional): 파일과 관련된 추가 메타데이터. Defaults to None.
-            
+            file_content: 저장할 파일 내용 (바이트)
+            filename: 파일 이름
+            metadata: 파일과 관련된 추가 메타데이터
+
         Returns:
-            str or None: 저장된 파일의 ID (문자열) 또는 중복/오류 시 None (또는 예외 발생)
+            Optional[str]: 저장된 파일의 ID (문자열) 또는 중복/오류 시 None
+
+        Raises:
+            FileProcessingError: 파일 처리 중 오류 발생 시
+            EmbeddingError: 임베딩 생성 중 오류 발생 시
         """
         logger.info(f"PostgreSQL 파일 저장 시도: {filename}")
         # 1. 파일 이름 중복 확인
@@ -277,33 +367,26 @@ class PostgreSQLStorage:
 
         file_id = None
         try:
-            # 2. files 테이블에 파일 저장
-            # psycopg2는 bytea 타입에 bytes 객체를 직접 바인딩할 수 있습니다.
-            # JSONB 타입에는 psycopg2.extras.Json()을 사용하여 파이썬 dict/list를 변환해야 합니다.
-            file_insert_query = "INSERT INTO files (filename, length, metadata, content) VALUES (%s, %s, %s, %s) RETURNING id"
-            self.execute_query(
-                file_insert_query,
-                params=(filename, len(file_content), psycopg2.extras.Json(metadata), file_content),
-                commit=False # 청크 저장까지 하나의 트랜잭션으로 묶기 위해 commit은 나중에
-            )
-            # 방금 삽입된 파일의 ID를 가져옵니다.
-            self._cursor.execute("SELECT currval(pg_get_serial_sequence('files','id')) AS new_file_id")
-            result_row = self._cursor.fetchone()
-            file_id = result_row['new_file_id'] if result_row else None # 결과가 있을 경우 'new_file_id' 키로 접근
-            logger.info(f"파일 '{filename}' files 테이블에 저장 완료. ID: {file_id}")
-
-            # 3. 파일 내용 처리 및 chunks 테이블에 저장 (MongoDBStorage의 로직 참고하여 재구현)
-            # .xlsx 또는 .png 파일은 청크 및 임베딩 처리 건너뛰기
+            # 2. 먼저 파일 내용 처리 및 임베딩 생성 (파일 저장 전에)
             file_extension = os.path.splitext(filename)[1].lower()
+            
+            # .xlsx 또는 .png 파일은 청크 및 임베딩 처리 건너뛰기
             if file_extension in ['.xlsx', '.png']:
                 logger.info(f"{file_extension.upper()} 파일 '{filename}'은 청크 및 임베딩 처리를 건너킵니다.")
-                # GridFS에만 저장했던 것처럼, files 테이블에만 저장하고 바로 파일 ID 반환
-                self._connection.commit() # files 테이블 삽입 트랜잭션 커밋
-                return str(file_id) # 파일 ID 반환
+                # 이미지/엑셀 파일은 바로 저장
+                file_insert_query = "INSERT INTO files (filename, length, metadata, content) VALUES (%s, %s, %s, %s) RETURNING id"
+                self.execute_query(
+                    file_insert_query,
+                    params=(filename, len(file_content), psycopg2.extras.Json(metadata), file_content),
+                    commit=True
+                )
+                self._cursor.execute("SELECT currval(pg_get_serial_sequence('files','id')) AS new_file_id")
+                result_row = self._cursor.fetchone()
+                file_id = result_row['new_file_id'] if result_row else None
+                logger.info(f"파일 '{filename}' files 테이블에 저장 완료. ID: {file_id}")
+                return str(file_id)
             
-            # 지원되는 다른 파일 형식 (txt, pdf, docx)은 내용 로드 및 청크 분할, 임베딩 생성 후 chunks 테이블에 저장
-            # MongoDBStorage의 해당 로직을 PostgreSQL에 맞게 수정
-            # 임시 파일 사용 로직 등 재활용 가능
+            # 지원되는 다른 파일 형식 (txt, pdf, docx)은 내용 로드 및 청크 분할, 임베딩 생성 후 파일 저장
             temp_file_path = None
             docs = []
             try:
@@ -322,12 +405,7 @@ class PostgreSQLStorage:
                      loader = Docx2txtLoader(temp_file_path)
                      docs = loader.load()
                  else:
-                      # 여기에 도달하는 경우는 지원되는 확장자 목록에 없는 경우로 이미 위에서 처리되었어야 하지만, 방어적으로 추가
                       logger.warning(f"청크 처리가 지원되지 않는 파일 형식: {filename}")
-                      self._connection.rollback() # 파일 저장 롤백
-                      # GridFS에서 삭제하는 로직 대신 files 테이블에서 삭제
-                      delete_query = "DELETE FROM files WHERE id = %s"
-                      self.execute_query(delete_query, params=(file_id,), commit=True)
                       return None # 처리 실패
 
             finally:
@@ -337,9 +415,6 @@ class PostgreSQLStorage:
 
             if not docs:
                  logger.warning(f"파일 내용 로드 실패 또는 내용 없음: {filename}")
-                 self._connection.rollback() # 파일 저장 롤백
-                 delete_query = "DELETE FROM files WHERE id = %s"
-                 self.execute_query(delete_query, params=(file_id,), commit=True)
                  return None # 문서 로드 실패 시 처리 중단
 
             # 3. 로드된 문서를 청크로 분할
@@ -354,14 +429,25 @@ class PostgreSQLStorage:
             # 각 청크(Document 객체)에 대한 벡터 임베딩 생성
             if not self.embedding_model:
                 logger.error("Embedding 모델이 로드되지 않았습니다. 청크 임베딩 생성이 불가능합니다.")
-                self._connection.rollback() # 파일 저장 롤백
-                delete_query = "DELETE FROM files WHERE id = %s"
-                self.execute_query(delete_query, params=(file_id,), commit=True)
                 raise RuntimeError("Embedding model not loaded") # 임베딩 모델 없으면 오류 발생
 
-            chunk_texts = [chunk.page_content for chunk in chunks]
+            # NUL 문자 제거
+            chunk_texts = [clean_text_for_postgresql(chunk.page_content) for chunk in chunks]
             embeddings = self.embedding_model.embed_documents(chunk_texts)
             logger.info(f"{len(embeddings)}개의 청크 임베딩 생성 완료.")
+            
+            # 4. 임베딩 생성이 완료된 후에 파일을 저장
+            file_insert_query = "INSERT INTO files (filename, length, metadata, content) VALUES (%s, %s, %s, %s) RETURNING id"
+            self.execute_query(
+                file_insert_query,
+                params=(filename, len(file_content), psycopg2.extras.Json(metadata), file_content),
+                commit=False # 청크 저장까지 하나의 트랜잭션으로 묶기 위해 commit은 나중에
+            )
+            # 방금 삽입된 파일의 ID를 가져옵니다.
+            self._cursor.execute("SELECT currval(pg_get_serial_sequence('files','id')) AS new_file_id")
+            result_row = self._cursor.fetchone()
+            file_id = result_row['new_file_id'] if result_row else None
+            logger.info(f"파일 '{filename}' files 테이블에 저장 완료. ID: {file_id}")
 
             # KeyBERT로 태그 추출기 준비 (최초 1회만 로드)
             # KeyBERT 임포트 및 사용 로직 추가
@@ -400,12 +486,12 @@ class PostgreSQLStorage:
                      # "tags": keywords, # 태그 추가 (KeyBERT 사용 시)
                      **chunk.metadata
                  }
-                 # 임베딩 벡터를 pgvector의 Vector 타입으로 변환 (register_vector 후 가능)
-                 # embedding_vector = Vector(embeddings[i])
+                 # NUL 문자 제거된 청크 내용 사용
+                 clean_content = clean_text_for_postgresql(chunk.page_content)
                  chunk_data_to_insert.append((
                      file_id,
                      i,
-                     chunk.page_content,
+                     clean_content,
                      Vector(embeddings[i]), # pgvector의 Vector 객체 사용
                      psycopg2.extras.Json(chunk_metadata)
                  ))
@@ -426,8 +512,12 @@ class PostgreSQLStorage:
              # 오류 발생 시 예외 다시 발생
              raise
 
-    def list_files(self):
-        """files 테이블에 저장된 파일 목록을 조회합니다."""
+    def list_files(self) -> List[Dict[str, Any]]:
+        """files 테이블에 저장된 파일 목록을 조회
+
+        Returns:
+            List[Dict[str, Any]]: 파일 목록 리스트
+        """
         logger.info("PostgreSQL 파일 목록 조회 시도")
         # SQL: SELECT id, filename, upload_date, length, metadata FROM files
         list_files_query = "SELECT id, filename, upload_date, length, metadata FROM files ORDER BY upload_date DESC"
@@ -487,8 +577,28 @@ class PostgreSQLStorage:
              logger.error(f"파일 ID {file_id} 삭제 실패")
              return False # 삭제 실패
 
-    def vector_search(self, query: str, file_filter: str = None, tags_filter: list[str] = None, top_k: int = TOP_K_RESULTS):
-        """PostgreSQL pgvector를 사용하여 문서를 검색합니다."""
+    def vector_search(
+        self,
+        query: str,
+        file_filter: Optional[str] = None,
+        tags_filter: Optional[List[str]] = None,
+        top_k: int = TOP_K_RESULTS
+    ) -> List[Dict[str, Any]]:
+        """PostgreSQL pgvector를 사용하여 문서 검색
+
+        Args:
+            query: 검색 쿼리
+            file_filter: 특정 파일로 필터링 (선택 사항)
+            tags_filter: 태그 필터링 리스트 (선택 사항)
+            top_k: 반환할 최대 결과 수
+
+        Returns:
+            List[Dict[str, Any]]: 검색 결과 리스트
+
+        Raises:
+            EmbeddingError: 임베딩 생성 중 오류 발생 시
+            DatabaseError: 데이터베이스 검색 중 오류 발생 시
+        """
         logger.info(f"PostgreSQL 벡터 검색 시도: {query}")
         if not self.embedding_model:
              logger.error("Embedding 모델이 로드되지 않았습니다. 벡터 검색을 수행할 수 없습니다.")
@@ -630,6 +740,90 @@ class PostgreSQLStorage:
         count = result[list(result.keys())[0]] if result else 0
 
         return count > 0
+
+    def check_file_exists(self, filename: str) -> dict:
+        """
+        파일명으로 중복 파일 존재 여부를 확인합니다.
+        
+        Args:
+            filename (str): 확인할 파일명.
+            
+        Returns:
+            dict: 파일 정보 (존재하는 경우) 또는 None (존재하지 않는 경우).
+        """
+        query = "SELECT id, filename, upload_date, length FROM files WHERE filename = %s"
+        result = self.execute_query(query, params=(filename,), fetchone=True)
+        if result:
+            return {
+                'id': result['id'],
+                'filename': result['filename'],
+                'upload_date': result['upload_date'],
+                'length': result['length']
+            }
+        return None
+
+    def get_chunk_count(self, file_id: str) -> int:
+        """
+        파일의 청크 수를 조회합니다.
+        
+        Args:
+            file_id (str): 파일 ID.
+            
+        Returns:
+            int: 청크 수.
+        """
+        query = "SELECT COUNT(*) as count FROM chunks WHERE file_id = %s"
+        result = self.execute_query(query, params=(file_id,), fetchone=True)
+        if result:
+            return result['count']
+        return 0
+
+    def get_latest_water_level(self) -> Optional[Dict[str, Any]]:
+        """water 테이블에서 가장 최신 수위 데이터를 가져옵니다."""
+        logger.info("PostgreSQL에서 최신 수위 데이터 조회 시도")
+        query = "SELECT * FROM water ORDER BY measured_at DESC LIMIT 1"
+        latest_level = self.execute_query(query, fetchone=True)
+        return latest_level if latest_level else None
+
+    def get_water_levels_for_period(self, reservoir_id: str, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """특정 기간 동안의 수위 데이터를 가져옵니다."""
+        logger.info(f"PostgreSQL에서 {reservoir_id}의 기간별 수위 데이터 조회: {start_time} - {end_time}")
+        # This assumes reservoir_id corresponds to a column name like 'gagok_water_level'
+        # A mapping might be needed if reservoir_id is e.g., 'gagok'
+        level_column = f"{reservoir_id}_water_level"
+        query = f"""SELECT measured_at, {level_column} as water_level FROM water 
+                     WHERE measured_at BETWEEN %s AND %s AND {level_column} IS NOT NULL 
+                     ORDER BY measured_at ASC"""
+        return self.execute_query(query, params=(start_time, end_time), fetchall=True)
+
+    def get_historical_data_for_prediction(self, reservoir_id: str, lookback_hours: int) -> List[float]:
+        """예측을 위한 과거 수위 데이터를 가져옵니다."""
+        logger.info(f"PostgreSQL에서 {reservoir_id}의 예측용 과거 데이터 조회 ({lookback_hours}시간)")
+        level_column = f"{reservoir_id}_water_level"
+        query = f"""SELECT {level_column} as water_level FROM water 
+                     WHERE measured_at >= NOW() - INTERVAL '{lookback_hours} hours' AND {level_column} IS NOT NULL 
+                     ORDER BY measured_at ASC"""
+        results = self.execute_query(query, fetchall=True)
+        return [float(row['water_level']) for row in results] if results else []
+
+    def get_historical_data_for_all(self, hours: int) -> List[Dict[str, Any]]:
+        """모든 저수지에 대한 과거 데이터를 가져옵니다."""
+        logger.info(f"PostgreSQL에서 모든 저수지의 과거 데이터 조회 ({hours}시간)")
+        query = f"""SELECT * FROM water 
+                     WHERE measured_at >= NOW() - INTERVAL '{hours} hours' 
+                     ORDER BY measured_at ASC"""
+        return self.execute_query(query, fetchall=True)
+
+    def get_pump_history_for_period(self, reservoir_id: str, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """특정 기간 동안의 펌프 이력 데이터를 가져옵니다."""
+        logger.info(f"PostgreSQL에서 {reservoir_id}의 펌프 이력 조회: {start_time} - {end_time}")
+        # This is a simplified query. The original tool had more complex logic to find pump sessions.
+        # For now, we just return the raw data.
+        pump_columns = [f'{reservoir_id}_pump_a', f'{reservoir_id}_pump_b'] # Example columns
+        query = f"""SELECT measured_at, {', '.join(pump_columns)} FROM water
+                     WHERE measured_at BETWEEN %s AND %s
+                     ORDER BY measured_at ASC"""
+        return self.execute_query(query, params=(start_time, end_time), fetchall=True)
 
 # TODO: config.py에 PostgreSQL 연결 정보 추가 (PG_DB_HOST, PG_DB_NAME, PG_DB_USER, PG_DB_PASSWORD, PG_DB_PORT)
 # TODO: app.py 등에서 MongoDBStorage 대신 PostgreSQLStorage 사용하도록 수정 

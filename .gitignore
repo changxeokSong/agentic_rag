@@ -3,12 +3,12 @@
 
 ### dotenv ###
 .env
-<<<<<<< HEAD
 
-=======
->>>>>>> 0559339 (Application Initialize)
 ### DB ###
 vector_db/
+
+### Application State ###
+.app_state.json
 
 ### Git ###
 # Created by git for backups. To disable backups in Git:
@@ -477,8 +477,4 @@ gradle-app.setting
 .history
 .ionide
 
-<<<<<<< HEAD
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,reactnative,react,git,dotenv
-=======
-# End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,reactnative,react,git,dotenv
->>>>>>> 0559339 (Application Initialize)

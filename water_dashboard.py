@@ -12,9 +12,21 @@ from utils.arduino_direct import DirectArduinoComm
 logger = setup_logger(__name__)
 
 def init_dashboard_session():
-    """대시보드 세션 상태 초기화"""
+    """대시보드 세션 상태 초기화 (상태 유지 포함)"""
+    from utils.state_manager import get_state_manager
+
+    state_manager = get_state_manager()
+
+    # 상태 유지: 글로벌 상태에서 복원
     if 'dashboard_data' not in st.session_state:
-        st.session_state.dashboard_data = []
+        dashboard_data = state_manager.get_dashboard_data()
+        # dashboard_data가 dict인 경우 list로 변환
+        if isinstance(dashboard_data, dict):
+            st.session_state.dashboard_data = []
+        elif isinstance(dashboard_data, list):
+            st.session_state.dashboard_data = dashboard_data
+        else:
+            st.session_state.dashboard_data = []
     
     if 'last_update' not in st.session_state:
         st.session_state.last_update = None
@@ -32,7 +44,7 @@ def init_dashboard_session():
     
     # 마지막으로 성공한 데이터 저장 (상태 유지용)
     if 'last_successful_data' not in st.session_state:
-        st.session_state.last_successful_data = None
+        st.session_state.last_successful_data = state_manager.get_last_successful_data()
     
     # 직접 아두이노 통신 객체 초기화 (app에서 공유된 상태 사용)
     if 'direct_arduino' not in st.session_state:
@@ -68,26 +80,35 @@ def get_water_level_data():
         logger.error(f"수위 데이터 가져오기 오류: {e}")
         return {"error": str(e)}
 
-def create_water_level_gauge(channel, level, status_color):
+def create_water_level_gauge(channel, level, status_color, channel_name=None):
     """수위 게이지 차트 생성"""
+    # 채널 이름 매핑
+    if channel_name is None:
+        if channel == 1:
+            channel_name = "가곡 배수지"
+        elif channel == 2:
+            channel_name = "해룡 배수지"
+        else:
+            channel_name = f"채널 {channel}"
+
     fig = go.Figure(go.Indicator(
-        mode = "gauge+number+delta",
+        mode = "gauge+number",
         value = level,
         domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': f"채널 {channel} 수위"},
-        delta = {'reference': 50},
+        title = {'text': f"{channel_name} 수위 (m)"},
+        number = {'suffix': "m"},
         gauge = {
-            'axis': {'range': [None, 100]},
+            'axis': {'range': [None, 120]},
             'bar': {'color': status_color},
             'steps': [
                 {'range': [0, 30], 'color': "lightgray"},
                 {'range': [30, 70], 'color': "gray"},
-                {'range': [70, 100], 'color': "darkgray"}
+                {'range': [70, 120], 'color': "darkgray"}
             ],
             'threshold': {
                 'line': {'color': "red", 'width': 4},
                 'thickness': 0.75,
-                'value': 90
+                'value': 100
             }
         }
     ))
@@ -121,20 +142,28 @@ def create_historical_chart(data_history):
         for _, row in df.iterrows():
             if row['channel_levels'] and isinstance(row['channel_levels'], dict):
                 for channel, level in row['channel_levels'].items():
-                    if channel not in channel_data:
-                        channel_data[channel] = {'timestamps': [], 'levels': []}
-                    channel_data[channel]['timestamps'].append(row['timestamp'])
-                    channel_data[channel]['levels'].append(level)
+                    try:
+                        channel_key = int(channel)
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    if channel_key not in channel_data:
+                        channel_data[channel_key] = {'timestamps': [], 'levels': []}
+                    channel_data[channel_key]['timestamps'].append(row['timestamp'])
+                    channel_data[channel_key]['levels'].append(level)
         
-        # 채널별로 하나의 trace만 생성
+        # 채널별로 하나의 trace만 생성 (채널 1=가곡, 채널 2=해룡)
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+        channel_names = {1: '가곡 배수지', 2: '해룡 배수지'}
+
         for i, (channel, data) in enumerate(sorted(channel_data.items())):
+            channel_label = channel_names.get(channel, f'채널 {channel}')
             fig.add_trace(
                 go.Scatter(
                     x=data['timestamps'],
                     y=data['levels'],
                     mode='lines+markers',
-                    name=f'채널 {channel}',
+                    name=channel_label,
                     line=dict(width=2, color=colors[i % len(colors)]),
                     connectgaps=True
                 ),
@@ -190,7 +219,7 @@ def create_historical_chart(data_history):
     )
     
     fig.update_xaxes(title_text="시간", row=2, col=1)
-    fig.update_yaxes(title_text="수위 (%)", row=1, col=1)
+    fig.update_yaxes(title_text="수위 (m)", row=1, col=1)
     fig.update_yaxes(title_text="펌프 상태", row=2, col=1, range=[-0.1, 1.1])
     
     return fig
@@ -400,7 +429,10 @@ def main():
         
         # 성공한 데이터인 경우 저장
         if current_data and "error" not in current_data:
-            st.session_state.last_successful_data = current_data
+            # 상태 관리자에도 저장
+            from utils.state_manager import get_state_manager
+            state_manager = get_state_manager()
+            state_manager.save_last_successful_data(current_data)
     else:
         # 연결되어 있지만 새로고침하지 않은 경우
         if st.session_state.last_successful_data:
@@ -424,9 +456,18 @@ def main():
             }
             
             # 히스토리 관리 (최대 100개 항목)
+            # dashboard_data가 dict인 경우 list로 변환 (안전 장치)
+            if isinstance(st.session_state.dashboard_data, dict):
+                st.session_state.dashboard_data = []
+
             st.session_state.dashboard_data.append(history_entry)
             if len(st.session_state.dashboard_data) > 100:
                 st.session_state.dashboard_data = st.session_state.dashboard_data[-100:]
+            
+            # 상태 관리자에도 저장
+            from utils.state_manager import get_state_manager
+            state_manager = get_state_manager()
+            state_manager.save_dashboard_data(history_entry)
             
             st.session_state.last_update = current_data["timestamp"]
         
@@ -474,10 +515,14 @@ def main():
             if arduino_comm.arduino_port == "SIMULATION" or water_data.get("simulation", False):
                 st.info("🔄 **시뮬레이션 모드** - 실제 센서 데이터가 아닙니다")
             
-            # 수위 게이지들
-            gauge_cols = st.columns(len(channel_levels) if channel_levels else 2)
-            
-            for i, (channel, level) in enumerate(sorted(channel_levels.items())):
+            # 수위 게이지들 (채널 1, 2만 표시)
+            # 채널 1, 2만 필터링
+            filtered_channels = {k: v for k, v in channel_levels.items() if k in [1, 2]}
+            gauge_cols = st.columns(len(filtered_channels) if filtered_channels else 2)
+
+            channel_names = {1: '가곡 배수지', 2: '해룡 배수지'}
+
+            for i, (channel, level) in enumerate(sorted(filtered_channels.items())):
                 with gauge_cols[i]:
                     # 상태 색상 결정
                     if level <= 10:
@@ -495,18 +540,21 @@ def main():
                     else:
                         status_color = "#8b5cf6"  # 보라
                         status_text = "매우 높음"
-                    
+
+                    # 채널 이름
+                    channel_label = channel_names.get(channel, f"채널 {channel}")
+
                     # 게이지 차트
-                    fig = create_water_level_gauge(channel, level, status_color)
+                    fig = create_water_level_gauge(channel, level, status_color, channel_label)
                     st.plotly_chart(fig, use_container_width=True)
-                    
+
                     # 상태 텍스트
                     simulation_badge = " (시뮬레이션)" if (arduino_comm.arduino_port == "SIMULATION" or water_data.get("simulation", False)) else ""
                     st.markdown(f"""
-                    <div style="text-align: center; padding: 10px; background: {status_color}20; 
+                    <div style="text-align: center; padding: 10px; background: {status_color}20;
                                 border-radius: 10px; border: 2px solid {status_color};">
-                        <h4 style="margin: 0; color: {status_color};">채널 {channel}{simulation_badge}</h4>
-                        <p style="margin: 5px 0; font-size: 1.2em; font-weight: bold;">{level}%</p>
+                        <h4 style="margin: 0; color: {status_color};">{channel_label}{simulation_badge}</h4>
+                        <p style="margin: 5px 0; font-size: 1.2em; font-weight: bold;">{level:.1f}m</p>
                         <p style="margin: 0; color: {status_color};">{status_text}</p>
                     </div>
                     """, unsafe_allow_html=True)
@@ -534,7 +582,8 @@ def main():
             current_pump_status = pump_data.get("pump_status", {})
     
     with pump_col1:
-        st.markdown("### 🔧 펌프 1")
+        st.markdown("### 💧 펌프 1 (급수 펌프)")
+        st.caption("외부 → 가곡 배수지로 물 공급")
         pump1_status = current_pump_status.get("pump1", "Unknown")
         
         # 상태 표시
@@ -568,27 +617,27 @@ def main():
         pump_control_disabled = not is_arduino_connected
         
         with col1_1:
-            if st.button("🟢 펌프1 켜기", key="pump1_on", use_container_width=True, disabled=pump_control_disabled):
+            if st.button("🟢 급수 펌프 켜기", key="pump1_on", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 time.sleep(1)
                 result = control_pump(1, "on")
                 if result.get("success", False):
-                    st.success("펌프 1이 켜졌습니다!")
+                    st.success("급수 펌프(펌프1)가 켜졌습니다!")
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
                 else:
                     st.error(f"펌프 제어 실패: {result.get('error', '알 수 없는 오류')}")
                     st.session_state.pump_control_in_progress = False
-        
+
         with col1_2:
-            if st.button("🔴 펌프1 끄기", key="pump1_off", use_container_width=True, disabled=pump_control_disabled):
+            if st.button("🔴 급수 펌프 끄기", key="pump1_off", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(1, "off")
                 if result.get("success", False):
-                    st.success("펌프 1이 꺼졌습니다!")
+                    st.success("급수 펌프(펌프1)가 꺼졌습니다!")
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
@@ -600,7 +649,8 @@ def main():
             st.caption("⚠️ 펌프 제어를 위해서는 아두이노 연결이 필요합니다")
     
     with pump_col2:
-        st.markdown("### 🔧 펌프 2")
+        st.markdown("### 🔄 펌프 2 (이송 펌프)")
+        st.caption("가곡 배수지 → 해룡 배수지로 물 이송")
         pump2_status = current_pump_status.get("pump2", "Unknown")  
         
         # 상태 표시
@@ -629,15 +679,15 @@ def main():
         # 패딩 추가
         st.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
         
-        # 제어 버튼  
+        # 제어 버튼
         col2_1, col2_2 = st.columns(2)
         with col2_1:
-            if st.button("🟢 펌프2 켜기", key="pump2_on", use_container_width=True, disabled=pump_control_disabled):
+            if st.button("🟢 이송 펌프 켜기", key="pump2_on", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(2, "on")
                 if result.get("success", False):
-                    st.success("펌프 2가 켜졌습니다!")
+                    st.success("이송 펌프(펌프2)가 켜졌습니다!")
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
@@ -646,12 +696,12 @@ def main():
                     st.session_state.pump_control_in_progress = False
         
         with col2_2:
-            if st.button("🔴 펌프2 끄기", key="pump2_off", use_container_width=True, disabled=pump_control_disabled):
+            if st.button("🔴 이송 펌프 끄기", key="pump2_off", use_container_width=True, disabled=pump_control_disabled):
                 st.session_state.pump_control_in_progress = True
                 st.session_state.user_interaction = True
                 result = control_pump(2, "off")
                 if result.get("success", False):
-                    st.success("펌프 2가 꺼졌습니다!")
+                    st.success("이송 펌프(펌프2)가 꺼졌습니다!")
                     st.session_state.manual_refresh_clicked = True
                     st.session_state.pump_control_in_progress = False
                     st.rerun()
@@ -665,13 +715,17 @@ def main():
     st.markdown("---")
     
     # 히스토리 차트
+    # dashboard_data가 list인지 확인 (안전 장치)
+    if not isinstance(st.session_state.dashboard_data, list):
+        st.session_state.dashboard_data = []
+
     if st.session_state.dashboard_data:
         st.markdown("## 📈 히스토리")
-        
+
         # 시간 범위 선택 (기본값 추적)
         if 'history_time_range' not in st.session_state:
             st.session_state.history_time_range = 30
-        
+
         time_range = st.selectbox(
             "표시할 시간 범위",
             options=[10, 30, 60, 100],
@@ -679,12 +733,12 @@ def main():
             format_func=lambda x: f"최근 {x}개 데이터",
             key="history_time_range_select"
         )
-        
+
         # 시간 범위 변경 시 사용자 인터랙션 플래그 설정
         if time_range != st.session_state.history_time_range:
             st.session_state.history_time_range = time_range
             st.session_state.user_interaction = True
-        
+
         # 데이터 필터링
         recent_data = st.session_state.dashboard_data[-time_range:]
         

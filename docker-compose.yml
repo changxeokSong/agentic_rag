@@ -31,9 +31,13 @@ services:
     environment:
       PG_DB_HOST: postgres
       PG_DB_PORT: 5432
+      WATER_LEVEL_LOG_INTERVAL: ${WATER_LEVEL_LOG_INTERVAL:-60}
+      ARDUINO_SERIAL_PORT: ${ARDUINO_SERIAL_PORT:-}
     command: ["/bin/sh", "scripts/entrypoint-backend.sh"]
     volumes:
       - ./:/app
+      - /dev:/dev  # 전체 /dev 디렉토리 마운트
+    privileged: true  # USB 디바이스 접근을 위해 필요
     restart: unless-stopped
 
   frontend:
@@ -47,12 +51,14 @@ services:
     environment:
       PG_DB_HOST: postgres
       PG_DB_PORT: 5432
-    command: ["/bin/sh", "scripts/entrypoint-frontend.sh"]
+      ARDUINO_SERIAL_PORT: ${ARDUINO_SERIAL_PORT:-}
     ports:
       - "8501:8501"
+    command: ["/bin/sh", "scripts/entrypoint-frontend.sh"]
     volumes:
       - ./:/app
-    restart: unless-stopped
+      - /dev:/dev
+    privileged: true
 
 volumes:
   pgdata:
