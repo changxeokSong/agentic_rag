@@ -2,7 +2,7 @@
   "automation_status": true,
   "autonomous_monitoring": true,
   "system_initialized": true,
-  "last_update": "2025-10-16T03:28:51.937517",
+  "last_update": "2025-10-16T03:34:33.925236",
   "orchestrator_active": true,
   "arduino_connected": true,
   "simulation_mode": true,
@@ -712,7 +712,7 @@
       "pump_details": {
         "pump_a": false
       },
-      "measured_at": "2025-10-16T03:28:15.391115",
+      "measured_at": "2025-10-16T03:33:57.414990",
       "reservoir_name": "가곡 배수지"
     },
     "haeryong": {
@@ -724,7 +724,7 @@
       "pump_details": {
         "pump_a": false
       },
-      "measured_at": "2025-10-16T03:28:15.391115",
+      "measured_at": "2025-10-16T03:33:57.414990",
       "reservoir_name": "해룡 배수지"
     }
   },
