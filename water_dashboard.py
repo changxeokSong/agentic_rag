@@ -84,9 +84,9 @@ def create_water_level_gauge(channel, level, status_color, channel_name=None):
     """수위 게이지 차트 생성"""
     # 채널 이름 매핑
     if channel_name is None:
-        if channel == 1:
+        if channel == 2:
             channel_name = "가곡 배수지"
-        elif channel == 2:
+        elif channel == 8:
             channel_name = "해룡 배수지"
         else:
             channel_name = f"채널 {channel}"
@@ -154,7 +154,7 @@ def create_historical_chart(data_history):
         
         # 채널별로 하나의 trace만 생성 (채널 1=가곡, 채널 2=해룡)
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
-        channel_names = {1: '가곡 배수지', 2: '해룡 배수지'}
+        channel_names = {2: '가곡 배수지', 8: '해룡 배수지'}
 
         for i, (channel, data) in enumerate(sorted(channel_data.items())):
             channel_label = channel_names.get(channel, f'채널 {channel}')
@@ -517,10 +517,10 @@ def main():
             
             # 수위 게이지들 (채널 1, 2만 표시)
             # 채널 1, 2만 필터링
-            filtered_channels = {k: v for k, v in channel_levels.items() if k in [1, 2]}
+            filtered_channels = {k: v for k, v in channel_levels.items() if k in [2, 8]}
             gauge_cols = st.columns(len(filtered_channels) if filtered_channels else 2)
 
-            channel_names = {1: '가곡 배수지', 2: '해룡 배수지'}
+            channel_names = {2: '가곡 배수지', 8: '해룡 배수지'}
 
             for i, (channel, level) in enumerate(sorted(filtered_channels.items())):
                 with gauge_cols[i]:

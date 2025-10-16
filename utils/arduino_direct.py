@@ -240,7 +240,7 @@ class DirectArduinoComm:
                 ch2_level = random.randint(20, 95)
                 return {
                     "success": True,
-                    "channel_levels": {1: ch1_level, 2: ch2_level},
+                    "channel_levels": {2: ch1_level, 8: ch2_level},
                     "current_water_level": ch2_level,
                     "average_water_level": (ch1_level + ch2_level) / 2,
                     "simulation": True
@@ -275,6 +275,11 @@ class DirectArduinoComm:
             min_samples = 1 if channel is not None else 2
             max_wait = 12  # 초
             while len(water_levels) < min_samples and (time.time() - start_time) < max_wait:
+                # 연결 상태 확인 (안전성 체크)
+                if not self.serial_connection or not hasattr(self.serial_connection, 'in_waiting'):
+                    logger.error("수위 읽기 중 연결이 끊어졌습니다")
+                    return {"success": False, "error": "아두이노 연결이 끊어졌습니다"}
+
                 if self.serial_connection.in_waiting > 0:
                     try:
                         raw_data = self.serial_connection.read(self.serial_connection.in_waiting)
@@ -396,10 +401,15 @@ class DirectArduinoComm:
             
             # 응답 대기
             time.sleep(0.5)
-            
+
             response_lines = []
             start_time = time.time()
             while (time.time() - start_time) < 3:
+                # 연결 상태 확인 (안전성 체크)
+                if not self.serial_connection or not hasattr(self.serial_connection, 'in_waiting'):
+                    logger.error("펌프 제어 중 연결이 끊어졌습니다")
+                    return {"success": False, "error": "아두이노 연결이 끊어졌습니다"}
+
                 if self.serial_connection.in_waiting > 0:
                     try:
                         line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
@@ -459,6 +469,11 @@ class DirectArduinoComm:
             response_lines = []
             start_time = time.time()
             while (time.time() - start_time) < 3:
+                # 연결 상태 확인 (안전성 체크)
+                if not self.serial_connection or not hasattr(self.serial_connection, 'in_waiting'):
+                    logger.error("펌프 상태 확인 중 연결이 끊어졌습니다")
+                    return {"success": False, "error": "아두이노 연결이 끊어졌습니다"}
+
                 if self.serial_connection.in_waiting > 0:
                     try:
                         line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()

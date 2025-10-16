@@ -1,23 +1,22 @@
 {
-  "automation_status": false,
-  "autonomous_monitoring": false,
+  "automation_status": true,
+  "autonomous_monitoring": true,
   "system_initialized": true,
-  "last_update": "2025-10-16T00:56:32.380888",
+  "last_update": "2025-10-16T02:49:17.473531",
   "orchestrator_active": true,
   "arduino_connected": true,
-  "simulation_mode": true,
+  "simulation_mode": false,
   "model_loaded": false,
   "arduino_port": "/dev/ttyACM0",
   "last_successful_data": {
     "water_data": {
       "success": true,
       "channel_levels": {
-        "1": 0,
-        "2": 0,
-        "7": 0
+        "2": 35,
+        "8": 85
       },
-      "current_water_level": 0,
-      "average_water_level": 0.0
+      "current_water_level": 85,
+      "average_water_level": 60.0
     },
     "pump_data": {
       "success": true,
@@ -27,7 +26,7 @@
       },
       "raw_response": "PUMP1_STATUS:OFF,PUMP2_STATUS:OFF"
     },
-    "timestamp": "2025-10-15T01:53:47.016877"
+    "timestamp": "2025-10-16T02:48:16.063437"
   },
   "dashboard_data": [
     {
@@ -315,11 +314,397 @@
         "pump1": "OFF",
         "pump2": "OFF"
       }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-15T01:53:47.016877",
+      "channel_levels": {
+        "1": 0,
+        "2": 0,
+        "7": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T01:57:49.169409",
+      "channel_levels": {
+        "3": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T01:58:37.610386",
+      "channel_levels": {
+        "3": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T01:59:03.873911",
+      "channel_levels": {
+        "3": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:07:51.910696",
+      "channel_levels": {
+        "2": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:08:18.701638",
+      "channel_levels": {
+        "8": 0
+      },
+      "average_level": 0.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:35:13.599071",
+      "channel_levels": {
+        "2": 90,
+        "8": 25
+      },
+      "average_level": 57.5,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:35:26.390981",
+      "channel_levels": {
+        "2": 90,
+        "8": 25
+      },
+      "average_level": 57.5,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:35:51.421322",
+      "channel_levels": {
+        "2": 90,
+        "8": 25
+      },
+      "average_level": 57.5,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:37:24.833125",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:37:28.223040",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:37:28.223040",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:37:28.223040",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:01.288454",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:38:35.517820",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:39:48.902186",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:39:48.902186",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:39:48.902186",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:39:48.902186",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:39:48.902186",
+      "channel_levels": {
+        "2": 90,
+        "8": 30
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:48:16.063437",
+      "channel_levels": {
+        "2": 35,
+        "8": 85
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
     }
   ],
   "reservoir_data": {
     "gagok": {
-      "water_level": 61.23,
+      "water_level": 30.0,
       "pump_status": "OFF",
       "alert_level": 90.0,
       "active_pumps": 0,
@@ -327,24 +712,24 @@
       "pump_details": {
         "pump_a": false
       },
-      "measured_at": "2025-10-15T10:11:07.617964",
+      "measured_at": "2025-10-16T02:48:45.981345",
       "reservoir_name": "가곡 배수지"
     },
     "haeryong": {
-      "water_level": 2.56,
-      "pump_status": "ON",
+      "water_level": 85.0,
+      "pump_status": "OFF",
       "alert_level": 85.0,
-      "active_pumps": 1,
+      "active_pumps": 0,
       "total_pumps": 1,
       "pump_details": {
-        "pump_a": true
+        "pump_a": false
       },
-      "measured_at": "2025-10-15T10:11:07.617964",
+      "measured_at": "2025-10-16T02:48:45.981345",
       "reservoir_name": "해룡 배수지"
     }
   },
   "pump_status": {
-    "haeryong": "ON",
+    "haeryong": "OFF",
     "gagok": "OFF"
   }
 }

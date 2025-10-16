@@ -12,7 +12,7 @@ TCA9548A<TwoWire> TCA;
 
 // --- 핀 설정 ---
 const int PUMP_PIN1 = 13;
-const int PUMP_PIN2 = 6;
+const int PUMP_PIN2 = 12;
 
 // --- 센서 I2C 주소 및 임계값 ---
 #define ATTINY1_HIGH_ADDR   0x78
@@ -20,8 +20,8 @@ const int PUMP_PIN2 = 6;
 #define THRESHOLD           100
 
 // --- 측정할 센서 채널 목록 ---
-// 여기에 실제로 사용하는 멀티플렉서의 채널 번호를 입력하세요.
-int sensorChannels[] = {1, 2}; // 예시: 0, 1, 2번 채널의 센서를 모두 읽음
+// [개선된 부분] 숫자 대신 라이브러리 상수를 사용하여 가독성 향상
+byte sensorChannels[] = {TCA_CHANNEL_1, TCA_CHANNEL_3}; // 예시: 1번, 3번 채널 센서 사용
 const int numSensors = sizeof(sensorChannels) / sizeof(sensorChannels[0]);
 
 

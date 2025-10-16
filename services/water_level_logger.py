@@ -33,8 +33,8 @@ class WaterLevelLogger:
         }
 
         # 채널 매핑 설정
-        self.CHANNEL_GAGOK = 1  # 가곡 배수지
-        self.CHANNEL_HAERYONG = 2  # 해룡 배수지
+        self.CHANNEL_GAGOK = 2  # 가곡 배수지
+        self.CHANNEL_HAERYONG = 8  # 해룡 배수지
 
     def start(self):
         """서비스 시작"""
