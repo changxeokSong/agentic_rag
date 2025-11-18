@@ -1,4 +1,4 @@
-# app.py - Streamlit 앱
+﻿# app.py - Streamlit 앱
 
 import streamlit as st
 import os
@@ -2283,9 +2283,10 @@ def main():
                                         if st.button("⬇️", key=f"prepare_{idx}_{file_id}", use_container_width=True, help="클릭하여 다운로드 준비"):
                                             try:
                                                 with st.spinner("파일 로딩 중..."):
-                                                    file_content = storage.get_file_content(file_id)
+                                                    file_content = storage.get_file_content_by_id(file_id)
                                                     if file_content:
-                                                        st.session_state[file_content_key] = file_content
+                                                        # Streamlit download_button은 bytes만 허용하므로 강제 변환
+                                                        st.session_state[file_content_key] = bytes(file_content)
                                                         st.rerun()
                                                     else:
                                                         st.error("파일을 가져올 수 없습니다.")
@@ -2295,7 +2296,7 @@ def main():
                                         # 실제 다운로드 버튼
                                         st.download_button(
                                             label="💾",
-                                            data=st.session_state[file_content_key],
+                                            data=bytes(st.session_state[file_content_key]),
                                             file_name=filename,
                                             key=f"download_btn_{idx}_{file_id}",
                                             use_container_width=True,
@@ -2314,3 +2315,4 @@ if __name__ == "__main__":
             "timestamp": datetime.now().strftime("%H:%M")
         })
     main()
+

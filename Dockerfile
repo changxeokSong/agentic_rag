@@ -21,7 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy and install Python dependencies first (better layer caching)
 COPY requirements.txt /app/requirements.txt
 # If you provide a lock file generated from your conda env (pip freeze), it will be preferred
-COPY requirements.lock.txt /app/requirements.lock.txt
 RUN pip install --upgrade pip && \
     if [ -f /app/requirements.lock.txt ]; then \
         echo "Installing from requirements.lock.txt" && \

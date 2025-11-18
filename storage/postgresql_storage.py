@@ -551,7 +551,11 @@ class PostgreSQLStorage:
         content_row = self.execute_query(content_query, params=(file_id_int,), fetchone=True)
 
         # content는 bytea 타입으로 저장되므로 bytes 객체 그대로 반환
-        return content_row['content'] if content_row and content_row.get('content') else None
+        content = content_row['content'] if content_row and content_row.get('content') else None
+        # psycopg2는 bytea를 memoryview로 반환할 수 있으므로 bytes로 강제 변환
+        if isinstance(content, memoryview):
+            content = content.tobytes()
+        return content
 
     def delete_file(self, file_id: str):
         """files 테이블에서 파일 및 연결된 chunks 삭제합니다.
