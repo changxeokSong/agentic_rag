@@ -68,48 +68,39 @@ if 'simulation_mode' not in st.session_state:
     st.session_state.simulation_mode = True
 
 def start_autonomous_monitoring():
-    """백그라운드 자율 모니터링 시작"""
-    if not st.session_state.get('autonomous_agent'):
+    """자동화 모니터링 시작"""
+    agent = st.session_state.get('autonomous_agent')
+    if not agent:
         return False
-    
-    if st.session_state.get('monitoring_thread') and st.session_state.monitoring_thread.is_alive():
+
+    thread = st.session_state.get('monitoring_thread')
+    if thread and thread.is_alive():
         st.session_state.autonomous_monitoring = True  # 상태 동기화
         return True  # 이미 실행 중
-    
+
     def monitoring_loop():
-        """백그라운드 모니터링 루프"""
+        """백그라운드 모니터링 실행"""
         try:
-            # 세션 상태에서 autonomous_agent 안전하게 가져오기
-            autonomous_agent = st.session_state.get('autonomous_agent')
-            if not autonomous_agent:
-                logger.error("autonomous_agent가 세션 상태에 없습니다")
+            agent_local = st.session_state.get('autonomous_agent')
+            if not agent_local:
+                logger.error('autonomous_agent가 세션에 없습니다')
                 return
-            
-            # 새 이벤트 루프 생성 (스레드용)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             try:
-                loop.run_until_complete(autonomous_agent.start_monitoring())
+                agent_local.start_monitoring()
             except Exception as e:
-                logger.error(f"자율 모니터링 오류: {e}")
-            finally:
-                loop.close()
+                logger.error(f"자동 모니터링 실패: {e}")
         except Exception as e:
-            logger.error(f"모니터링 루프 초기화 오류: {e}")
-    
-    # 백그라운드 스레드에서 모니터링 시작
+            logger.error(f"모니터링 루프 초기화 실패: {e}")
+
     thread = threading.Thread(target=monitoring_loop, daemon=True)
     thread.start()
-    
+
     st.session_state.monitoring_thread = thread
     st.session_state.autonomous_monitoring = True
-    
-    # 자율 에이전트의 내부 상태도 업데이트
-    autonomous_agent = st.session_state.autonomous_agent
-    if hasattr(autonomous_agent, 'is_monitoring'):
-        autonomous_agent.is_monitoring = True
-    
+
+    if hasattr(agent, 'is_monitoring'):
+        agent.is_monitoring = True
+
     return True
 
 def stop_autonomous_monitoring():
@@ -2315,4 +2306,5 @@ if __name__ == "__main__":
             "timestamp": datetime.now().strftime("%H:%M")
         })
     main()
+
 

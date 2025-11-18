@@ -168,6 +168,11 @@ class DatabaseConnector:
                     new_data = dict(latest_data)
                     new_data['measured_at'] = current_time
                     
+                    # 기본키/불변 컬럼 제거 (PK 충돌 방지)
+                    for drop_key in ['id', 'created_at', 'updated_at']:
+                        if drop_key in new_data:
+                            new_data.pop(drop_key, None)
+                    
                     # 펌프 상태 업데이트 (double precision 컬럼에 맞게 1.0/0.0 사용)
                     if pump_action.upper() == "ON":
                         for pump_col in config['pumps']:

@@ -1,4 +1,4 @@
-# core/query_analyzer.py
+﻿# core/query_analyzer.py
 
 from config import FUNCTION_SELECTION_PROMPT, AVAILABLE_FUNCTIONS
 from utils.logger import setup_logger
@@ -16,23 +16,22 @@ class QueryAnalyzer:
         logger.info("질의 분석기 초기화")
     
     def analyze(self, query):
-        """도구 선택: LLM 우선, 실패 시 기본 벡터 검색으로 폴백"""
-        logger.info(f"하이브리드 질의 분석: {query}")
+        """쿼리 분석: 규칙/키워드 우선 + 기본 벡터 검색 (LLM 사전 호출 제거)"""
+        logger.info(f"대화형 쿼리 분석: {query}")
 
-        # 0. 스몰토크/인사 등은 도구 미사용
+        # 0. 스몰톡/잡담 필터
         if self._is_small_talk(query):
-            logger.info("스몰토크로 판단됨 → 도구 미사용")
+            logger.info("스몰톡으로 판단되어 도구 사용 생략")
             return None
 
-        # 1. LLM 기반 도구 선택
-        logger.info("LLM 기반 매칭 우선 시도")
-        llm_result = self._llm_based_analysis(query)
-        if llm_result:
-            logger.info(f"✓ LLM 매칭 성공: {[tool['name'] for tool in llm_result]}")
-            return llm_result
+        # 1. 규칙 기반 매칭
+        rule_result = self._rule_based_analysis(query)
+        if rule_result:
+            logger.info(f"[Rule] 도구 선택: {[tool['name'] for tool in rule_result]}")
+            return rule_result
 
-        # 2. LLM이 아무 도구도 선택하지 못한 경우: 기본 벡터 검색 도구 사용
-        logger.info("LLM 매칭 실패 - 기본 vector_search_tool로 폴백")
+        # 2. 기본 도구: 벡터 검색
+        logger.info("[Fallback] vector_search_tool 자동 선택")
         return [{"name": "vector_search_tool", "arguments": {"query": query}}]
     
     def _rule_based_analysis(self, query):
@@ -430,3 +429,4 @@ class QueryAnalyzer:
             "who are you", "introduce", "hello", "hi", "thanks", "thank you", "bye"
         ]
         return any(k in q for k in small_talk_keywords)
+
