@@ -208,7 +208,9 @@ class ResponseGenerator:
             for gid, gname in graph_infos:
                 suffix += f"\n- {gname} (graph_file_id: {gid})"
         if vector_sources:
-            suffix += "\n\n---\n**출처**\n" + "\n".join(f"- {s}" for s in sorted(vector_sources))
+            suffix += "\n\n---\n**[참고된 문서 목록]**"
+            for src in vector_sources:
+                suffix += f"\n- {src}"
 
         # 응답 생성
         try:

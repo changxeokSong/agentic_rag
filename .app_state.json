@@ -2,7 +2,7 @@
   "automation_status": false,
   "autonomous_monitoring": false,
   "system_initialized": true,
-  "last_update": "2025-11-18T02:45:28.118768",
+  "last_update": "2025-11-18T04:00:20.558656",
   "orchestrator_active": true,
   "arduino_connected": true,
   "simulation_mode": true,
@@ -700,11 +700,59 @@
         "pump1": "OFF",
         "pump2": "OFF"
       }
+    },
+    {
+      "timestamp": "2025-10-16T02:48:16.063437",
+      "channel_levels": {
+        "2": 35,
+        "8": 85
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:48:16.063437",
+      "channel_levels": {
+        "2": 35,
+        "8": 85
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:48:16.063437",
+      "channel_levels": {
+        "2": 35,
+        "8": 85
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
+    },
+    {
+      "timestamp": "2025-10-16T02:48:16.063437",
+      "channel_levels": {
+        "2": 35,
+        "8": 85
+      },
+      "average_level": 60.0,
+      "pump_status": {
+        "pump1": "OFF",
+        "pump2": "OFF"
+      }
     }
   ],
   "reservoir_data": {
     "gagok": {
-      "water_level": 90.0,
+      "water_level": 62.95,
       "pump_status": "OFF",
       "alert_level": 90.0,
       "active_pumps": 0,
@@ -712,11 +760,11 @@
       "pump_details": {
         "pump_a": false
       },
-      "measured_at": "2025-10-16T03:43:59.446782",
+      "measured_at": "2020-09-13T11:19:00",
       "reservoir_name": "가곡 배수지"
     },
     "haeryong": {
-      "water_level": 80.0,
+      "water_level": 2.3,
       "pump_status": "OFF",
       "alert_level": 85.0,
       "active_pumps": 0,
@@ -724,12 +772,12 @@
       "pump_details": {
         "pump_a": false
       },
-      "measured_at": "2025-10-16T03:43:59.446782",
+      "measured_at": "2020-09-13T11:19:00",
       "reservoir_name": "해룡 배수지"
     }
   },
   "pump_status": {
-    "haeryong": "OFF",
-    "gagok": "OFF"
+    "haeryong": "ON",
+    "gagok": "ON"
   }
 }

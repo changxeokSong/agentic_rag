@@ -1,4 +1,4 @@
-# config.py - 환경변수를 활용한 시스템 설정
+﻿# config.py - 환경변수를 활용한 시스템 설정
 
 import os
 import json
@@ -163,7 +163,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
     all_functions = [
         {
             "name": "water_level_monitoring_tool",
-            "description": "📊 수위 모니터링 도구입니다. DB에 저장된 과거 데이터를 조회하거나 현재 상태를 확인합니다. 자연어 질문 예시: '현재 수위 보여줘', '24시간 수위 그래프 그려줘', '지난 12시간 수위 데이터', '가곡 상태 알려줘', '수위 현황 확인'",
+            "description": "DB에서 수위 시계열을 조회/그래프화/샘플데이터 추가 등을 수행합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -183,7 +183,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "arduino_water_sensor",
-            "description": "🔧 아두이노 하드웨어 직접 제어 도구입니다 (실시간). 자연어 질문 예시: '펌프1 켜줘', '펌프2 꺼줘', '펌프 상태 확인', '아두이노 연결해줘'. 주의: DB 기반 수위 조회는 water_level_monitoring_tool 사용",
+            "description": "실시간 아두이노 센서/펌프 제어 (연결/상태/수위 측정/펌프 on/off 등)을 수행합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -214,7 +214,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "smart_water_prediction",
-            "description": "🔮 미래 수위 예측 도구입니다. DB에서 자동으로 최신 데이터를 가져와 예측합니다. 자연어 질문 예시: '점심 먹을 때쯤 수위가 어떻게 될까?', '가곡 30분 후 수위는?', '해룡 1시간 뒤 예측해줘', '가곡 언제 100m 도달해?', '저녁때 수위 알려줘'. time_expression 파라미터로 '점심', '30분 후', '1시간 후' 등 자연어 시간 표현 지원.",
+            "description": "배수지 수위를 단기 예측합니다. reservoir(가곡/해룡), time_expression/time_minutes 등을 입력받습니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -242,7 +242,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "water_level_prediction_tool",
-            "description": "🧮 사용자가 직접 제공한 수위 데이터를 기반으로 LSTM 딥러닝 모델로 미래 수위를 예측하는 도구입니다. (DB 자동 조회가 아닌 수동 데이터 입력용)",
+            "description": "수위 예측/시뮬레이션용 보조 도구입니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -262,7 +262,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "advanced_water_analysis_tool",
-            "description": "📈 고급 수위 분석 도구입니다. 예시 질문: '지금 속도로 올라가면 언제 경보 수위 넘길까?', '어제 펌프 돌았나?', '어제 오전이랑 오후 수위 추세 비교해줘', '어느 쪽이 더 안정적이었어?', '현재 수위 상승 속도는?'",
+            "description": "배수지 수위 데이터를 분석/비교/예측/알림 등에 사용합니다 (current_trend, compare_periods, pump_history 등).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -301,7 +301,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "automation_control_tool",
-            "description": "🤖 AI 자동화 에이전트 제어 도구입니다. 자연어 질문 예시: '자동화 시작해줘', '시스템 상태 보여줘', '최근 로그 50개', 'Arduino 연결 확인', '자동화 중지해줘'",
+            "description": "자동화된 펌프/밸브/예약 작업 등 외부 제어 시나리오를 실행합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -331,7 +331,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "real_time_database_control_tool",
-            "description": "⏱️ 실시간 데이터 수집 서비스를 제어하는 도구입니다. 아두이노에서 자동으로 데이터를 수집하여 DB에 저장합니다.",
+            "description": "데이터베이스 연결 테스트, 단순 조회/쓰기 등의 제어 기능을 수행합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -351,7 +351,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "vector_search_tool",
-            "description": "🔍 업로드된 문서에서 벡터 기반 검색을 수행하는 도구입니다. PDF, 텍스트 파일에서 의미 기반 검색을 합니다.",
+            "description": "업로드된 PDF/텍스트 문서에서 의미 기반 및 키워드 검색을 수행합니다. 망설이면 이 도구를 사용하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -385,7 +385,7 @@ def get_available_functions() -> List[Dict[str, Any]]:
         },
         {
             "name": "list_files_tool",
-            "description": "📁 업로드된 파일 목록을 조회하는 도구입니다. 파일명, 크기, 업로드 시간 등을 확인할 수 있습니다.",
+            "description": "업로드된 파일 목록을 반환합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {}
@@ -433,6 +433,37 @@ def generate_function_selection_prompt() -> str:
     return prompt
 
 # 도구 선택 프롬프트
+def generate_function_selection_prompt() -> str:
+    """함수 선택용 시스템 프롬프트 생성"""
+    prompt = f"""너는 사용자의 요청에 맞춰 적절한 도구를 호출하는 에이전트다.
+
+원칙:
+- 의도 우선: 키워드가 아니라 의미를 보고 도구를 고른다.
+- 검색/정보/자료/내용/방법/사용법을 묻거나 '찾아줘/알려줘'가 포함되면 기본적으로 `vector_search_tool`을 선택한다.
+- 현재/과거 상태 조회는 DB/센서 기반 도구를 쓴다.
+- 스몰톡/인사/잡담/농담/감사일 때만 []를 반환한다. 그 외에는 최소 1개 이상 도구를 반환한다.
+- 모호하면 안전하게 `vector_search_tool`을 선택한다.
+
+도구 선택 예시:
+- "현재 가곡 수위 상태" -> advanced_water_analysis_tool(action="current_trend", reservoir_id="gagok", hours=1)
+- "점심 먹을 즈음 수위 어떻게 돼?" -> smart_water_prediction(reservoir="gagok", time_expression="점심")
+- "어제 펌프 켰었어?" -> advanced_water_analysis_tool(action="pump_history", time_expression="어제")
+- "어제랑 오늘 비교해줘" -> advanced_water_analysis_tool(action="compare_periods", time_expression="어제")
+- "파일 목록 보여줘" -> list_files_tool()
+- "아두이노 연결해줘" -> arduino_water_sensor(action="connect")
+- "데이터베이스에서 리눅스 사용법을 찾아줘" -> vector_search_tool(query="리눅스 사용법")
+- "파일에서 리눅스 명령어 정리 알려줘" -> vector_search_tool(query="리눅스 명령어 정리")
+- "자료/정보/내용/방법/사용법을 찾아줘/알려줘" -> vector_search_tool(query=사용자 요청문)
+
+응답 형식: JSON 배열로 함수 호출을 반환한다. 스몰톡이 아닐 때는 반드시 도구를 하나 이상 포함한다.
+
+사용 가능한 도구 정의:
+```json
+{json.dumps(AVAILABLE_FUNCTIONS, indent=2, ensure_ascii=False)}
+```
+"""
+    return prompt
+
 FUNCTION_SELECTION_PROMPT = generate_function_selection_prompt()
 
 # 개선된 구조화 응답 생성 프롬프트 (가독성 향상)
@@ -522,3 +553,12 @@ def print_config() -> Dict[str, Any]:
     }
     
     return config_info
+
+
+
+
+
+
+
+
+
