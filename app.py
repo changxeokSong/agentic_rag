@@ -15,6 +15,7 @@ from config import print_config, DEBUG_MODE, ENABLED_TOOLS
 from storage.postgresql_storage import PostgreSQLStorage
 from tools.water_level_monitoring_tool import water_level_monitoring_tool
 from utils.state_manager import get_state_manager, sync_automation_status
+from streamlit_autorefresh import st_autorefresh
 
 # 로거 설정
 logger = setup_logger(__name__)
@@ -504,6 +505,13 @@ def main():
     # 페이지 라우팅
     if 'page' not in st.session_state:
         st.session_state.page = "main"
+
+    # 사이드바 설정 (데이터 갱신 설정)
+    with st.sidebar:
+        st.header("⚙️ 설정")
+        with st.expander("수위 모니터링 갱신", expanded=True):
+            st.checkbox("자동 갱신 활성화", value=True, key="enable_refresh_water")
+            st.number_input("갱신 주기 (초)", min_value=1, value=5, key="refresh_sec_water")
 
     if st.session_state.page == "water_dashboard":
         try:
@@ -1775,6 +1783,17 @@ def main():
 
         # 시스템 초기화 후에만 모든 위젯 표시
         if is_system_initialized:
+            # 자동 갱신 로직
+            enable_refresh = st.session_state.get("enable_refresh_water", True)
+            refresh_sec = st.session_state.get("refresh_sec_water", 5)
+            if enable_refresh:
+                with st.container(border=True):
+                    st.caption(f"🔄 자동 갱신 활성화 ({refresh_sec}초)")
+                    st_autorefresh(
+                        interval=refresh_sec * 1000,
+                        key="water_monitor_autorefresh"
+                    )
+
             # 수위 모니터링 대시보드
             with st.container(border=True):
                 st.subheader("💧 수위 모니터링")
